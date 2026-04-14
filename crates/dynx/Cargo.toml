@@ -1,0 +1,10 @@
+[package]
+name = "dynx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rkyv = { workspace = true }
+bytecheck = { workspace = true }
+inventory = { workspace = true }
+dynx_macros = { path = "../dynx_macros" }

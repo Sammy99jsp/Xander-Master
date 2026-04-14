@@ -1,0 +1,19 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+package.authors = ["Sammy99jsp <sammy@sammy99jsp.dev>"]
+package.version = "0.1.0"
+package.repository = "https://github.com/Sammy99jsp/Xander"
+package.license = "MIT"
+package.edition = "2024"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "forbid"
+
+[workspace.dependencies]
+downcast-rs = "2.0.2"
+smol = "2.0.2"
+thiserror = "2.0.18"
+inventory = "0.3.24"
+rkyv = "0.8.15"
+bytecheck = "0.8.2"
