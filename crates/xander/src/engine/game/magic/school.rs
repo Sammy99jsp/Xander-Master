@@ -5,7 +5,7 @@ use dynx::{Member, Namespace};
 use xander_runtime::ui;
 
 #[Namespace("SPELL::SCHOOL" @ NS, derive(Singleton))]
-pub trait School: ui::UI {}
+pub trait School: ui::Ui {}
 
 macro_rules! schools_of_magic {
     {
@@ -21,7 +21,7 @@ macro_rules! schools_of_magic {
             #[Member(const_format::map_ascii_case!(Case::UpperSnake, stringify!($school)), register(Singleton))]
             impl School for $school {}
 
-            impl ui::UI for $school {}
+            impl ui::Ui for $school {}
         )*
     };
 }
@@ -56,7 +56,7 @@ schools_of_magic! {
 mod tests {
     use xander_runtime::dynx::Identity;
 
-    use crate::engine::magic::school::Necromancy;
+    use crate::engine::game::magic::school::Necromancy;
 
     #[test]
     fn test_name_case() {

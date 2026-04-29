@@ -1,46 +1,94 @@
 use std::rc::Rc;
 
-use xander_runtime::flow::Dispatcher;
+use xander_runtime::flow::{
+    Dispatcher as FlowDispatcher,
+    dispatcher::DispatchState,
+    event::{EventHandler, Outcome},
+    io::Interface as FlowInterface,
+};
 
-use crate::engine::game::combat::Combat;
+use crate::engine::{
+    game::{combat::Combat, flow::EventHandlers},
+    io::Interface,
+};
 
 pub mod combat;
 pub mod creature;
+pub mod flow;
 pub mod health;
+pub mod magic;
+pub mod measure;
 pub mod stats;
+
+pub type Dispatcher = FlowDispatcher<Game>;
 
 #[derive(Debug)]
 pub struct Game {
     pub combat: Combat,
-    pub dispatcher: Rc<Dispatcher<Self>>,
+    pub dispatcher: Rc<Dispatcher>,
+    pub interface: Interface,
+    pub event_handlers: EventHandlers,
 }
 
 impl Game {
-    pub fn new() -> Rc<Self> {
+    pub fn new<Io>(base: Io) -> Rc<Self>
+    where
+        Io: FlowInterface + 'static,
+    {
         Rc::new_cyclic(|this| Self {
             combat: Combat::new(),
             // SAFETY: Using Rc::new_cyclic to ensure lifetimes satisfy the Dispatcher.
             dispatcher: unsafe { Dispatcher::new(this.clone()) },
+            interface: Interface::new(base),
+            event_handlers: EventHandlers::new(),
         })
+    }
+}
+
+impl DispatchState for Game {
+    type Interface = Interface;
+
+    fn interface(&self) -> &Self::Interface {
+        &self.interface
+    }
+
+    fn handle<E: xander_runtime::flow::Event<Self>>(
+        &self,
+        event: E,
+    ) -> impl IntoFuture<Output = Outcome<Self, E>> {
+        self.event_handlers.handle(event)
+    }
+
+    fn listen<H>(&self, handler: H)
+    where
+        H: EventHandler<Self> + 'static,
+    {
+        self.event_handlers.listen(handler);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::game::{Game, creature};
+    use xander_runtime::flow::io::TestInterface;
+
+    use crate::engine::game::{
+        Game, creature,
+        stats::skill::{Skill, profs::SkillProficiency},
+    };
 
     #[test]
     fn new_game() {
-        smol::block_on(async {
-            let game = Game::new();
+        let game = Game::new(TestInterface);
 
-            let creature = creature::test_creature();
+        let creature = creature::test_creature();
+        creature.stats.proficiencies.insert(SkillProficiency {
+            skill: Skill::Acrobatics,
+        });
+
+        let pinned = smol::block_on(smol::future::poll_once(
             game.dispatcher
-                .dispatch(async {
-                    let b = creature.stats.proficiency_bonus.get().await;
-                    println!("{b:?}");
-                })
-                .await;
-        })
+                .dispatch(async { creature.stats.proficiency_bonus.get().await }),
+        ));
+        println!("{pinned:?}")
     }
 }

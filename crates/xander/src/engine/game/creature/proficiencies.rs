@@ -5,18 +5,15 @@ use std::{
 };
 
 use dynx::Identity;
-use rkyv::{
-    bytecheck,
-    de::Pooling,
-    rancor::{Fallible, Source},
-};
-use xander_runtime::lived::list::LivedList;
+use xander_runtime::{dynx::cells::InnerValue, lived::list::LivedList};
 
 use crate::prelude::proficiency::{Proficiency, ProficiencyApplicationBase, ProficiencyBase};
 
 type Table = HashMap<String, LivedList<Rc<dyn ProficiencyBase>>>;
 
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Proficiencies {
+    #[rkyv(with = InnerValue<Table>)]
     profs: RefCell<Table>,
 }
 
@@ -25,6 +22,18 @@ impl Proficiencies {
         Self {
             profs: RefCell::new(HashMap::new()),
         }
+    }
+
+    pub fn insert<P>(&self, prof: P)
+    where
+        P: Proficiency,
+    {
+        let mut profs = self.profs.borrow_mut();
+        profs
+            .entry(<P::Application as Identity>::LOCAL_ID.to_string())
+            .or_default()
+            .get_mut()
+            .push(Rc::new(prof));
     }
 
     pub fn insert_mut<P>(&mut self, prof: P)
@@ -74,61 +83,3 @@ impl std::fmt::Debug for Proficiencies {
 
 #[derive(rkyv::Archive)]
 pub struct Test(String);
-
-// Archiving
-#[repr(transparent)]
-#[derive(rkyv::Portable, bytecheck::CheckBytes)]
-#[bytecheck(crate = rkyv::bytecheck)]
-pub struct ArchivedTable(rkyv::Archived<Table>);
-
-impl ArchivedTable {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.values().map(|a| a.len()).sum()
-    }
-
-    pub fn on(&self) -> impl Iterator<Item = &str> {
-        self.0.keys().map(rkyv::Archived::<String>::as_str)
-    }
-}
-
-pub struct ResolverTable(rkyv::Resolver<Table>);
-
-impl rkyv::Archive for Proficiencies {
-    type Archived = ArchivedTable;
-    type Resolver = ResolverTable;
-
-    fn resolve(&self, resolver: Self::Resolver, out: rkyv::Place<Self::Archived>) {
-        let table_ptr = unsafe { ::core::ptr::addr_of_mut!((*out.ptr()).0) };
-        let table_out = unsafe { ::rkyv::Place::from_field_unchecked(out, table_ptr) };
-        self.profs.borrow().resolve(resolver.0, table_out);
-    }
-}
-
-impl<S> rkyv::Serialize<S> for Proficiencies
-where
-    S: Fallible + ?Sized,
-    Table: rkyv::Serialize<S>,
-{
-    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
-        let resolver = self.profs.borrow().serialize(serializer)?;
-        Ok(ResolverTable(resolver))
-    }
-}
-
-impl<D> rkyv::Deserialize<Proficiencies, D> for rkyv::Archived<Proficiencies>
-where
-    D: Fallible + Pooling + ?Sized,
-    D::Error: Source,
-{
-    fn deserialize(&self, deserializer: &mut D) -> Result<Proficiencies, <D as Fallible>::Error> {
-        let table = self.0.deserialize(deserializer)?;
-        Ok(Proficiencies {
-            profs: RefCell::new(table),
-        })
-    }
-}

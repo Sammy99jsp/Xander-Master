@@ -7,7 +7,7 @@ pub enum Component {
     Material(Box<dyn MaterialBase>),
 }
 
-impl ui::UI for Component {}
+impl ui::Ui for Component {}
 
 /// Because material components behave differently,
 /// this is a trait instead.
@@ -22,7 +22,7 @@ impl<M: Material> MaterialBase for M {
     }
 }
 
-pub trait MaterialBase: ui::UI + Send + Sync {
+pub trait MaterialBase: ui::Ui + Send + Sync {
     fn cloned(&self) -> Box<dyn MaterialBase>;
 }
 

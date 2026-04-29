@@ -178,7 +178,6 @@ mod test {
     fn a() {
         let parser = crate::DExpr::parser();
 
-        let res = parser.parse("1+d8+4d4p<1").into_result();
-        println!("{res:?}");
+        let _ = parser.parse("1+d8+4d4p<1").into_result();
     }
 }

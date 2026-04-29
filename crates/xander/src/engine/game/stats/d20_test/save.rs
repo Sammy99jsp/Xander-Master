@@ -75,7 +75,7 @@ pub mod profs {
 
     impl ArchivedProficiencyBase for rkyv::Archived<SaveProficiency> {}
 
-    register!(SaveProficiency: dyn ProficiencyBase);
+    register!(SaveProficiency: dyn ProficiencyBase, register(Archive, Deserialize, Lived));
 
     impl Proficiency for SaveProficiency {
         type Application = Ability;
@@ -277,6 +277,6 @@ pub mod events {
 pub mod ui {
     use xander_runtime::ui;
 
-    impl ui::UI for super::SaveResult {}
-    impl ui::UI for super::Save {}
+    impl ui::Ui for super::SaveResult {}
+    impl ui::Ui for super::Save {}
 }

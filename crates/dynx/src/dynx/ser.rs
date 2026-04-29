@@ -1,7 +1,7 @@
 use rkyv::{
     SerializeUnsized,
     rancor::Fallible,
-    ser::{Allocator, Positional, Sharing, Writer, WriterExt, sharing::SharingState},
+    ser::{Allocator, Positional, Sharing, Writer, sharing::SharingState},
 };
 
 use crate::dynx::error::DynError;

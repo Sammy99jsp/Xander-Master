@@ -1,4 +1,4 @@
-use crate::engine::measure::Feet;
+use crate::engine::game::measure::Feet;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Range {

@@ -364,12 +364,8 @@ mod tests {
 
         let mut ac = Provided::new();
         ac.enroll_mut(BaseAC(10));
-        // let base = Arc::new(BaseAC(10)) as Arc<dyn ProvisoBase<u32>>;
         let bytes = to_bytes::<Error>(&ac).unwrap();
-        // println!("{bytes:?}");
 
-        let deserialized = from_bytes::<Provided<u32>, Error>(&bytes).unwrap();
-
-        println!("{deserialized:?}")
+        let _ = from_bytes::<Provided<u32>, Error>(&bytes).unwrap();
     }
 }

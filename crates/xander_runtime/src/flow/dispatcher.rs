@@ -5,14 +5,29 @@ use std::{
     task::{ContextBuilder, LocalWake, LocalWaker, Poll, Waker},
 };
 
+use crate::flow::{
+    self, Event,
+    event::{EventHandler, Outcome},
+};
+
+pub trait DispatchState {
+    type Interface: flow::Interface + ?Sized;
+    fn interface(&self) -> &Self::Interface;
+
+    fn handle<E: Event<Self>>(&self, event: E) -> impl IntoFuture<Output = Outcome<Self, E>>;
+    fn listen<H>(&self, handler: H)
+    where
+        H: EventHandler<Self> + 'static;
+}
+
 #[derive(Debug)]
 pub struct Dispatcher<State>(Weak<State>)
 where
-    State: ?Sized;
+    State: DispatchState + ?Sized;
 
 impl<State> Dispatcher<State>
 where
-    State: ?Sized,
+    State: DispatchState + ?Sized,
 {
     /// Creates a new dispatcher for the provided state.
     ///
@@ -56,7 +71,7 @@ where
 #[pin_project::pin_project]
 pub struct Dispatched<State, Fut>
 where
-    State: ?Sized,
+    State: DispatchState + ?Sized,
 {
     #[pin]
     pub(crate) fut: Fut,
@@ -65,7 +80,7 @@ where
 
 pub struct DispatchWaker<State>
 where
-    State: ?Sized,
+    State: DispatchState + ?Sized,
 {
     dispatcher: Rc<Dispatcher<State>>,
     waker: Waker,
@@ -73,7 +88,7 @@ where
 
 impl<State> LocalWake for DispatchWaker<State>
 where
-    State: ?Sized,
+    State: DispatchState + ?Sized,
 {
     fn wake(self: Rc<Self>) {
         self.waker.wake_by_ref();
@@ -83,7 +98,7 @@ where
 impl<State, Fut> Future for Dispatched<State, Fut>
 where
     Fut: Future,
-    State: ?Sized + 'static,
+    State: DispatchState + ?Sized + 'static,
 {
     type Output = Fut::Output;
 
@@ -111,7 +126,7 @@ where
 
 impl<'a, State> Future for LocalDispatcher<'a, State>
 where
-    State: ?Sized,
+    State: DispatchState + ?Sized,
 {
     type Output = &'a State;
 
@@ -129,12 +144,33 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::flow::io::TestInterface;
+
+    type MyDispatcher = Dispatcher<str>;
+
+    impl DispatchState for str {
+        type Interface = TestInterface;
+
+        fn interface(&self) -> &Self::Interface {
+            &TestInterface
+        }
+
+        fn handle<E: Event<Self>>(&self, event: E) -> impl IntoFuture<Output = Outcome<Self, E>> {
+            event.finalize()
+        }
+
+        fn listen<H>(&self, _: H)
+        where
+            H: EventHandler<Self>,
+        {
+        }
+    }
+
     #[test]
     fn hello_world() {
-        use super::*;
-
         let state = <Rc<str> as From<&str>>::from("Hello, world!");
-        type MyDispatcher = Dispatcher<str>;
+
         let dispatcher = Rc::new(Dispatcher(Rc::downgrade(&state)));
 
         smol::block_on(async move {

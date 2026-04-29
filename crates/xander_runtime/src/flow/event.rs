@@ -2,13 +2,15 @@ use std::{future::ready, pin::Pin};
 
 use downcast_rs::{Downcast, impl_downcast};
 use dynx::{IntoNamespace, Namespace};
+use futures::future::LocalBoxFuture;
 
 use crate::{
     dynx::{Identity, IdentityBase},
+    flow::{Dispatcher, dispatcher::DispatchState},
     lived::Lived,
 };
 
-pub trait Event<S>: Sized + Identity<Parent = dyn EventBase<S>> + EventBase<S> {
+pub trait Event<S: ?Sized>: Sized + Identity<Parent = dyn EventBase<S>> + EventBase<S> {
     type Resolved;
     fn map_resolved(self) -> impl IntoFuture<Output = Self::Resolved>;
 
@@ -21,6 +23,16 @@ pub trait Event<S>: Sized + Identity<Parent = dyn EventBase<S>> + EventBase<S> {
                 false => Outcome::Resolved(self.map_resolved().await),
                 true => Outcome::Cancelled(self.map_cancelled().await),
             }
+        }
+    }
+
+    fn handle(self) -> impl IntoFuture<Output = Outcome<S, Self>>
+    where
+        S: DispatchState,
+    {
+        async {
+            let state = Dispatcher::<S>::local().await;
+            state.handle(self).await
         }
     }
 }
@@ -41,11 +53,11 @@ impl Namespace for NS {
     message = "EventBase not implemented for {Self}",
     note = "If your Event is cancellable, add an EventState field, and use cancellable!({Self}, self.event_state) to auto-impl EventBase."
 )]
-pub trait EventBase<S>: IdentityBase<self::NS> + std::fmt::Debug + Downcast {
+pub trait EventBase<S: ?Sized>: IdentityBase<self::NS> + std::fmt::Debug + Downcast {
     fn is_cancelled(&self) -> bool;
 }
 
-impl<S> IntoNamespace for dyn EventBase<S> {
+impl<S: ?Sized> IntoNamespace for dyn EventBase<S> {
     type Namespace = NS;
 }
 
@@ -116,7 +128,7 @@ where
 
 // Event Handlers.
 
-pub trait EventHandler<S>: EventHandlerBase<S> {
+pub trait EventHandler<S: ?Sized>: EventHandlerBase<S> {
     type Event: Event<S>;
     fn handle<'s, 'e: 's>(
         &'s self,
@@ -124,11 +136,8 @@ pub trait EventHandler<S>: EventHandlerBase<S> {
     ) -> impl IntoFuture<Output = ()> + 's;
 }
 
-pub trait EventHandlerBase<S>: Lived + std::fmt::Debug {
-    fn handle<'s, 'e: 's>(
-        &'s self,
-        event: &'e mut dyn EventBase<S>,
-    ) -> Pin<Box<dyn Future<Output = ()> + 's>>;
+pub trait EventHandlerBase<S: ?Sized>: Lived + std::fmt::Debug {
+    fn handle<'s, 'e: 's>(&'s self, event: &'e mut dyn EventBase<S>) -> LocalBoxFuture<'s, ()>;
 }
 
 impl<S, H> EventHandlerBase<S> for H
@@ -149,7 +158,7 @@ where
 }
 
 /// Result after an event has been handled by the [Dispatcher] and appropriate [EventHandler]s.
-pub enum Outcome<S, E>
+pub enum Outcome<S: ?Sized, E>
 where
     E: Event<S>,
 {

@@ -3,7 +3,7 @@ use crate::{BinaryOperator as Op, DExpr, Dice, Int, Label, Literal, UnaryOperato
 // Labels / UI
 
 impl Label {
-    pub const fn new<UI: xander_runtime::ui::UI>(ui: Rc<UI>) -> Self {
+    pub const fn new<UI: xander_runtime::ui::Ui>(ui: Rc<UI>) -> Self {
         Self(ui)
     }
 }
@@ -23,7 +23,7 @@ impl PartialOrd for Label {
 impl DExpr {
     pub fn label<UI>(self, ui: Rc<UI>) -> Self
     where
-        UI: xander_runtime::ui::UI,
+        UI: xander_runtime::ui::Ui,
     {
         Self::Labeled(Box::new(self), Label::new(ui))
     }
@@ -32,14 +32,14 @@ impl DExpr {
 impl ValTree {
     pub fn label<UI>(self, ui: Rc<UI>) -> Self
     where
-        UI: xander_runtime::ui::UI,
+        UI: xander_runtime::ui::Ui,
     {
         Self::Labeled(Box::new(self), Label::new(ui))
     }
 }
 
-impl xander_runtime::ui::UI for DExpr {}
-impl xander_runtime::ui::UI for ValTree {}
+impl xander_runtime::ui::Ui for DExpr {}
+impl xander_runtime::ui::Ui for ValTree {}
 
 // Conversions
 
@@ -184,14 +184,14 @@ impl ValTree {
     pub fn modify_in_place(&mut self, func: impl FnOnce(Self) -> Self) {
         replace_expr(self, func);
     }
+
+    pub fn int_div(self, div: i32) -> Self {
+        Self::BinaryOperation(Box::new(self), Op::IntDiv, Box::new(div.into()))
+    }
 }
 
-fn replace_expr<A>(expr: &mut A, func: impl FnOnce(A) -> A) {
-    // SAFETY: *self will be a valid value by the end of the unsafe block
-    unsafe {
-        let val = std::ptr::read(expr);
-        std::ptr::write(expr, func(val));
-    }
+fn replace_expr<A: Clone>(expr: &mut A, func: impl FnOnce(A) -> A) {
+    *expr = func(expr.clone());
 }
 
 impl AddAssign for DExpr {

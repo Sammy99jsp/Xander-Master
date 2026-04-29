@@ -115,5 +115,5 @@ pub mod ui {
         pub prof: DynWeak<dyn ProficiencyBase>,
     }
 
-    impl xander_runtime::ui::UI for ProficiencyBonusHint {}
+    impl xander_runtime::ui::Ui for ProficiencyBonusHint {}
 }

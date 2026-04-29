@@ -3,8 +3,21 @@ pub mod currency;
 pub use currency::*;
 use rkyv::{Archive, Deserialize, Serialize};
 
+const FEET_PER_SQUARE: u32 = 0;
+
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]
 pub struct Feet(pub u32);
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]
+pub struct Squares(pub u32);
+
+impl Squares {
+    pub const fn from_feet(feet: f64) -> Squares {
+        Squares((feet / FEET_PER_SQUARE as f64).ceil() as u32)
+    }
+}
+
+
 
 /// In seconds.
 #[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]

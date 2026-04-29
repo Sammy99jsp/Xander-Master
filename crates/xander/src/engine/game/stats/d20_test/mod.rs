@@ -4,24 +4,28 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use d20::DiceRoller as _;
 use xander_runtime::{
+    DynWeak,
     flow::{
         Event, Interface,
         decision::Response,
+        dispatcher::DispatchState,
         io::{Decision, IntoDecision},
     },
     identity,
 };
 
 use crate::{
-    engine::game::{
-        Dispatcher, Game,
-        creature::Creature,
-        stats::{
-            ability::{Ability, AbilityModifier},
-            proficiency::ProficiencyApplicationBase,
+    engine::{
+        game::{
+            Dispatcher, Game,
+            creature::Creature,
+            stats::{
+                ability::{Ability, AbilityModifier},
+                proficiency::ProficiencyApplicationBase,
+            },
         },
+        io::User,
     },
     prelude::event::Outcome,
 };
@@ -170,7 +174,7 @@ pub trait D20Test: Sized {
             {
                 let bonus = me.stats.proficiency_bonus.get().await;
                 // We'll keep track of the "how" and label to modifier.
-                Some(bonus.into_expr(Rc::downgrade(me), prof))
+                Some(bonus.into_expr(DynWeak::new(Rc::downgrade(me)), DynWeak::new(prof)))
             } else {
                 None
             };
@@ -214,13 +218,12 @@ pub trait D20Test: Sized {
             // Roll for the check, including all bonuses/penalties.
 
             let game = Dispatcher::local().await;
-            let Player { roller, .. } = game.state_for(me.actor());
+            let User { roller, .. } = game.interface().state_for(me.actor());
 
             let roll_result = roller
                 .roll(&roll)
-                .expect("valid dice expr, no errors whilst rolling")
                 .await
-                .unwrap();
+                .expect("valid dice expr, no errors whilst rolling");
             // Fire the pre-result event
             //
             let PreResultPayload {
@@ -253,7 +256,7 @@ pub trait D20Test: Sized {
                         creature.clone(),
                         roll_result.clone(),
                     )
-                    .decide()
+                    .decide::<Game>()
                     .await;
 
                     (Rc::into_inner(test_rc).unwrap(), test_result)

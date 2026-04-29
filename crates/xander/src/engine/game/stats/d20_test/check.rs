@@ -146,7 +146,7 @@ pub mod events {
 
     #[derive(Debug)]
     pub struct CheckCancelled {
-        pub reason: Weak<dyn ui::UI>,
+        pub reason: Weak<dyn ui::Ui>,
         pub result: Option<super::CheckResult>,
     }
 
@@ -280,8 +280,8 @@ pub mod events {
 pub mod ui {
     use xander_runtime::ui;
 
-    impl ui::UI for super::Check {}
-    impl ui::UI for super::CheckResult {}
+    impl ui::Ui for super::Check {}
+    impl ui::Ui for super::CheckResult {}
 }
 
 // #[cfg(test)]
@@ -316,7 +316,7 @@ pub mod ui {
 //     }
 
 //     always_alive!(Expertise);
-//     impl ui::UI for Expertise {}
+//     impl ui::Ui for Expertise {}
 
 //     impl EventHandler<Game> for Expertise {
 //         type Event = super::events::PreRollCheckEvent;
@@ -351,7 +351,7 @@ pub mod ui {
 //     }
 
 //     always_alive!(AlwaysInspired);
-//     impl ui::UI for AlwaysInspired {}
+//     impl ui::Ui for AlwaysInspired {}
 
 //     impl EventHandler<Game> for AlwaysInspired {
 //         type Event = super::events::PreRollCheckEvent;

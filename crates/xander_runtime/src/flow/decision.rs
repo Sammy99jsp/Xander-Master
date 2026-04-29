@@ -2,6 +2,7 @@ use downcast_rs::{Downcast, impl_downcast};
 
 use crate::{
     dynx::{Id, Identity, IntoNamespace, Namespace},
+    flow::{Dispatcher, dispatcher::DispatchState, io::InterfaceExt},
     ui,
 };
 
@@ -12,6 +13,16 @@ pub trait IntoDecision: Identity<Parent = Decision> + Downcast + Sized {
     /// Converts this Decision into a type-erased [Decision].
     /// Use [Decision::new<Self>] to achieve this.
     fn into_decision(self) -> Decision;
+
+    fn decide<State>(self) -> impl IntoFuture<Output = Self::Response>
+    where
+        State: DispatchState,
+    {
+        async {
+            let state = Dispatcher::<State>::local().await;
+            state.interface().decide::<Self>(self).await
+        }
+    }
 }
 
 pub trait DecisionKind: Downcast + std::fmt::Debug {
@@ -58,7 +69,18 @@ impl Decision {
 }
 
 /// Some external being that interacts with the
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Actor(u32);
 
 impl std::fmt::Debug for Actor {
@@ -83,6 +105,14 @@ impl Actor {
     pub const fn as_index(&self) -> usize {
         self.0 as usize
     }
+
+    /// # Safety
+    /// 
+    /// This [Actor] should be unique within an [super::Interface].
+    #[doc(hidden)]
+    pub const unsafe fn new(id: u32) -> Self {
+        Self(id)
+    }
 }
 
 impl Decision {
@@ -91,10 +121,10 @@ impl Decision {
     }
 }
 
-type ValidateFn = dyn for<'a> Fn(&'a [Box<dyn ui::UI>]) -> Result<(), ui::Component> + Send + Sync;
+type ValidateFn = dyn for<'a> Fn(&'a [Box<dyn ui::Ui>]) -> Result<(), ui::Component> + Send + Sync;
 
 pub struct Selection {
-    pub items: Vec<Box<dyn ui::UI>>,
+    pub items: Vec<Box<dyn ui::Ui>>,
     pub validate: Option<Box<ValidateFn>>,
     pub qty: usize,
 }
@@ -111,7 +141,7 @@ impl std::fmt::Debug for Selection {
 }
 
 pub struct Ranking {
-    pub items: Vec<Box<dyn ui::UI>>,
+    pub items: Vec<Box<dyn ui::Ui>>,
     pub validate: Option<Box<ValidateFn>>,
 }
 
@@ -141,7 +171,7 @@ pub mod prelude {
     pub use super::{Actor, Decision, DecisionKind, IntoDecision, Ranking, Selection};
     pub use crate::{
         dynx::Identity,
-        ui::{Component, UI},
+        ui::{Component, Ui},
     };
     pub use crate::{identity, register};
 }

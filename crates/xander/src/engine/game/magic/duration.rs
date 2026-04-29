@@ -1,4 +1,4 @@
-use crate::engine::measure;
+use crate::engine::game::measure;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Duration {

@@ -4,6 +4,14 @@ use crate::{
     Dice, DiceRoll, DieRoll, RollSetOp, RollSetOperator, UnevalTree, ValTree, ValTreeError,
 };
 
+#[derive(Debug)]
+pub enum DiceRollError<R: DiceRoller> {
+    PreRoll(ValTree),
+    Roll(R::RollErr),
+}
+
+pub type RollResult<R> = Result<ValTree, DiceRollError<R>>;
+
 /// Wrapper to allow different environments (web UI, TUI, etc.) to govern how dice are rolled.
 ///
 /// For most use cases, you will not need to encounter this trait.
@@ -11,20 +19,25 @@ use crate::{
 /// This trait is handy for certain use cases
 pub trait DiceRoller: Sized {
     type Fut<T>: DiceFuture<T>;
-    type RollErr;
+    type RollErr: std::fmt::Display;
 
+    #[doc(hidden)]
     fn map_fut<T, U>(fut: Self::Fut<T>, func: impl FnOnce(T) -> U) -> Self::Fut<U>;
+
+    #[doc(hidden)]
     fn ok_then_fut<T, U>(
         fut: Self::Fut<Result<T, Self::RollErr>>,
         func: impl FnOnce(T) -> Self::Fut<U>,
     ) -> Self::Fut<Result<U, Self::RollErr>>;
     fn flat_fut<T>(fut: Self::Fut<Self::Fut<T>>) -> Self::Fut<T>;
 
+    #[doc(hidden)]
     fn fold_until_fut<T, U>(
         fut: Self::Fut<T>,
         step: impl FnMut(T) -> ControlFlow<U, Self::Fut<T>>,
     ) -> Self::Fut<U>;
 
+    #[doc(hidden)]
     fn roll_dice<'d>(
         &self,
         dice: impl IntoIterator<Item = &'d Dice>,
@@ -347,7 +360,7 @@ pub mod local_rng {
             let rng = LocalRng::new(367324233);
 
             let a = rng.roll(&four_d6_kl_2).unwrap().into_inner().unwrap();
-            println!("{a:#?}")
+            println!("{a:?}")
         }
     }
 }

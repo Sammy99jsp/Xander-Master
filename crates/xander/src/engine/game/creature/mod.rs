@@ -1,21 +1,31 @@
 pub mod character;
+pub mod me;
 pub mod monster;
 pub mod proficiencies;
+pub mod size;
 pub mod stat_block;
 
-use std::rc::{Rc, Weak};
+pub use self::{
+    character::{Character, Level},
+    me::Me,
+    monster::{Cr, Monster},
+    size::CreatureSize,
+    stat_block::StatBlock,
+};
+
+use std::rc::Rc;
 
 use xander_runtime::flow::io::Actor;
-
-use crate::engine::game::creature::stat_block::StatBlock;
 
 #[derive(rkyv::Archive, rkyv::Serialize, Debug)]
 pub struct Creature {
     pub id: CreatureId,
     pub name: String,
+    pub size: CreatureSize,
     pub kind: CreatureKind,
     pub stats: StatBlock,
 }
+
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CreatureId(u32);
 
@@ -43,38 +53,18 @@ impl Creature {
         }
     }
 
-    pub fn deserialize<E>() -> Rc<Self> {
-        todo!()
-    }
-}
-
-/// [Me] is a serializable/deserializable (weak) reference to a creature
-/// with a guarantee that there is always at least (one) strong reference
-/// to the creature.
-///
-/// Use this type for things that are self-referential to the creature
-/// that holds a value.
-///
-/// For external creatures, you may use the usual Weak<Creature>.
-///
-/// This type is primarily to allow for cyclical references within the [rkyv] ecosystem.
-///
-#[derive(Clone)]
-pub struct Me(Weak<Creature>);
-
-impl std::fmt::Debug for Me {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Me").finish()
+    pub fn is_dead(&self) -> bool {
+        self.stats.health.is_dead()
     }
 }
 
 pub mod ui {
     use xander_runtime::ui;
 
-    impl ui::UI for super::Creature {}
+    impl ui::Ui for super::Creature {}
 }
 
-pub mod prov {
+pub mod provisos {
     use std::future::ready;
 
     use dynx::Identity;
@@ -84,7 +74,8 @@ pub mod prov {
         register,
     };
 
-    use crate::engine::game::{creature::Me, stats::proficiency::ProficiencyBonus};
+    use super::Me;
+    use crate::engine::game::stats::proficiency::ProficiencyBonus;
 
     #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     pub struct CreatureProficiencyBonus {
@@ -116,185 +107,45 @@ pub mod prov {
     }
 }
 
-// Archiving
-
-pub mod archiving {
-    use std::{
-        mem::MaybeUninit,
-        ops::Deref,
-        rc::{Rc, Weak},
-    };
-
-    use dynx::dynx::DynDeserializer;
-    use rkyv::{
-        Archive, Deserialize, Serialize,
-        de::Pooling,
-        rancor::{Fallible, Source},
-    };
-
-    use crate::engine::game::creature::{CreatureId, Me};
-
-    use super::Creature;
-
-    impl Deref for Me {
-        type Target = Creature;
-
-        fn deref(&self) -> &Self::Target {
-            if self.0.strong_count() == 0 {
-                panic!("Tried to dereference me without any strong references!");
-            }
-
-            unsafe { self.0.as_ptr().as_ref().unwrap() }
-        }
-    }
-
-    impl Archive for Me {
-        type Archived = rkyv::Archived<CreatureId>;
-        type Resolver = rkyv::Resolver<CreatureId>;
-
-        fn resolve(&self, resolver: Self::Resolver, out: rkyv::Place<Self::Archived>) {
-            self.id.resolve(resolver, out);
-        }
-    }
-
-    impl<S> Serialize<S> for Me
-    where
-        S: Fallible + ?Sized,
-    {
-        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
-            self.id.serialize(serializer)
-        }
-    }
-
-    impl<D> Deserialize<Me, D> for rkyv::Archived<Me>
-    where
-        D: Fallible + ?Sized,
-    {
-        fn deserialize(&self, deserializer: &mut D) -> Result<Me, <D as Fallible>::Error> {
-            // SAFETY: We should only be called by something that is owned by Creature...
-            let deserializer = unsafe {
-                (deserializer as *mut D as *mut Deserializer<'_, dyn DynDeserializer>)
-                    .as_mut()
-                    .unwrap_unchecked()
-            };
-
-            Ok(Me(deserializer.creature(self.to_id())))
-        }
-    }
-
-    pub trait CreatureDeserializer: Fallible {
-        fn creature(&self, id: CreatureId) -> Weak<Creature>;
-    }
-
-    pub struct Deserializer<'a, D: ?Sized> {
-        creature: Rc<MaybeUninit<Creature>>,
-        inner: &'a mut D,
-    }
-
-    impl<'a, D> CreatureDeserializer for Deserializer<'a, D>
-    where
-        D: Fallible + ?Sized,
-    {
-        fn creature(&self, _: CreatureId) -> Weak<Creature> {
-            let weak = Rc::downgrade(&self.creature);
-
-            unsafe { Weak::from_raw(Weak::into_raw(weak).cast::<Creature>()) }
-        }
-    }
-
-    impl<'a, D> Fallible for Deserializer<'a, D>
-    where
-        D: Fallible + ?Sized,
-    {
-        type Error = D::Error;
-    }
-
-    impl<'a, D> Pooling for Deserializer<'a, D>
-    where
-        D: Fallible + Pooling + ?Sized,
-    {
-        #[inline]
-        fn start_pooling(&mut self, address: usize) -> rkyv::de::PoolingState {
-            self.inner.start_pooling(address)
-        }
-
-        unsafe fn finish_pooling(
-            &mut self,
-            address: usize,
-            ptr: rkyv::de::ErasedPtr,
-            drop: unsafe fn(rkyv::de::ErasedPtr),
-        ) -> Result<(), <Self as Fallible>::Error> {
-            unsafe { self.inner.finish_pooling(address, ptr, drop) }
-        }
-    }
-
-    impl<D> Deserialize<Rc<Creature>, D> for rkyv::Archived<Creature>
-    where
-        D: Fallible + Pooling + ?Sized,
-        D::Error: Source,
-    {
-        fn deserialize(
-            &self,
-            deserializer: &mut D,
-        ) -> Result<Rc<Creature>, <D as Fallible>::Error> {
-            let mut deserializer = Deserializer {
-                creature: Rc::new_uninit(),
-                inner: deserializer,
-            };
-
-            let ptr = deserializer.creature.as_ptr().cast_mut();
-
-            unsafe {
-                std::ptr::write(
-                    ptr,
-                    Creature {
-                        id: {
-                            println!("Deserializing id");
-                            self.id.deserialize(&mut deserializer)?
-                        },
-                        name: self.name.deserialize(&mut deserializer)?,
-                        kind: {
-                            println!("Deserializing kind");
-                            self.kind.deserialize(&mut deserializer)?
-                        },
-                        stats: {
-                            println!("Deserializing stats");
-                            self.stats.deserialize(&mut deserializer)?
-                        },
-                    },
-                )
-            };
-
-            unsafe { Ok(deserializer.creature.assume_init()) }
-        }
-    }
-
-    impl super::ArchivedCreatureId {
-        fn to_id(&self) -> CreatureId {
-            CreatureId(self.0.to_native())
-        }
-    }
-}
-
 #[cfg(test)]
 pub fn test_creature() -> Rc<Creature> {
     use self::{
         monster::{Cr, Monster},
         proficiencies::Proficiencies,
-        prov::CreatureProficiencyBonus,
+        provisos::CreatureProficiencyBonus,
         stat_block::{AbilityModifiers, AbilityScores, base_score as base_score_},
     };
-    use crate::engine::game::{health::Health, stats::AbilityScore};
+    use crate::engine::game::{
+        creature::monster::MonsterType, health::Health, stats::AbilityScore,
+    };
+    use dynx::{Member, dynx::Single};
     use xander_runtime::lived::Provided;
 
     fn base_score(s: u8) -> Provided<AbilityScore> {
         base_score_(AbilityScore::try_from(s).unwrap())
     }
 
+    #[derive(Debug)]
+    pub struct Test;
+
+    #[Member("TEST", register(Singleton))]
+    impl MonsterType for Test {
+        fn title(&self) -> &'static str {
+            "Test"
+        }
+    }
+
     Creature::new(|me| Creature {
         id: CreatureId(0),
         name: "Test-Creature".to_string(),
-        kind: CreatureKind::Monster(Monster { cr: Cr::Half }),
+        size: CreatureSize::Medium,
+        kind: CreatureKind::Monster(Monster {
+            cr: Cr::Half,
+            ty: monster::Type {
+                ty: Single::new(&Test),
+                tags: Vec::new(),
+            },
+        }),
         stats: StatBlock {
             me: me.clone(),
             proficiency_bonus: {
@@ -312,9 +163,7 @@ pub fn test_creature() -> Rc<Creature> {
                 cha: base_score(12),
             },
             modifiers: AbilityModifiers::new(me.clone()),
-            health: Health {
-                temp_hp: Default::default(),
-            },
+            health: Health::with_set_max(me.clone(), 7).unwrap(),
         },
     })
 }

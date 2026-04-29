@@ -2,13 +2,13 @@ use std::rc::Rc;
 
 use crate::engine::game::creature::Creature;
 
-#[derive(Debug)]
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Combatant {
     pub creature: Rc<Creature>,
     pub initiative_score: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Combat {
     initiative: Vec<Combatant>,
 }

@@ -10,9 +10,10 @@ pub mod dynx;
 pub mod flow;
 pub mod lived;
 pub mod ui;
-
 #[doc(hidden)]
 pub mod __macros;
+
+pub use futures;
 
 pub use lived::Lived;
 

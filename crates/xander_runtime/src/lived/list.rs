@@ -12,26 +12,17 @@ use crate::lived::Lived;
 /// A list of [Lived] objects, which lazily drops objects,
 /// when queried, that are no longer [Lived::is_alive].
 #[derive(Debug)]
-pub struct LivedList<L>
-where
-    L: Lived,
-{
+pub struct LivedList<L> {
     contents: RefCell<Vec<L>>,
 }
 
-impl<L> Default for LivedList<L>
-where
-    L: Lived,
-{
+impl<L> Default for LivedList<L> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<L> LivedList<L>
-where
-    L: Lived,
-{
+impl<L> LivedList<L> {
     pub const fn new() -> Self {
         Self {
             contents: RefCell::new(Vec::new()),
@@ -43,7 +34,12 @@ where
             contents: RefCell::new(Vec::with_capacity(capacity)),
         }
     }
+}
 
+impl<L> LivedList<L>
+where
+    L: Lived,
+{
     fn cleanup(&self) {
         cleanup(self.contents.borrow_mut().as_mut());
     }

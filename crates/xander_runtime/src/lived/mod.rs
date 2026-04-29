@@ -2,32 +2,37 @@ pub mod cell;
 pub mod list;
 pub mod provided;
 
-pub use provided::{ArchivedProvisoBase, Provided, Proviso, ProvisoBase};
 pub use cell::LivedCell;
 pub use list::LivedList;
-
+pub use provided::{ArchivedProvisoBase, Provided, Proviso, ProvisoBase};
 
 use std::{
     ops::Deref,
     rc::{Rc, Weak},
 };
 
-pub trait LivedIdentity {
+pub trait LivedIdentity: Lived {
     #[doc(hidden)]
     fn full_id(&self) -> FullId;
 }
 
-pub trait Lived: LivedIdentity + for<'a> DynSerializeUnsized<'a> {
+pub trait Lived {
     fn is_alive(&self) -> bool;
+}
+
+pub trait LivedAndSerializable: LivedIdentity + for<'a> DynSerializeUnsized<'a> {}
+
+impl<T> LivedAndSerializable for T where
+    T: Lived + LivedIdentity + for<'a> DynSerializeUnsized<'a> + ?Sized
+{
 }
 
 impl<L> Lived for Rc<L>
 where
-    L: Lived + ?Sized + 'static,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
+    L: Lived + ?Sized,
 {
     fn is_alive(&self) -> bool {
-        Lived::is_alive(Rc::deref(self))
+        L::is_alive(self)
     }
 }
 
@@ -43,7 +48,6 @@ where
 impl<L> Lived for Box<L>
 where
     L: Lived + ?Sized,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
 {
     fn is_alive(&self) -> bool {
         Lived::is_alive(Box::deref(self))
@@ -52,8 +56,7 @@ where
 
 impl<L> LivedIdentity for Box<L>
 where
-    L: Lived + ?Sized,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
+    L: LivedIdentity + ?Sized,
 {
     fn full_id(&self) -> FullId {
         L::full_id(self)
@@ -64,7 +67,6 @@ where
 impl<L> Lived for Weak<L>
 where
     L: Lived + ?Sized + 'static,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
 {
     fn is_alive(&self) -> bool {
         self.upgrade().as_ref().is_some_and(Lived::is_alive)
@@ -74,8 +76,7 @@ where
 /// [Weak<L>] is alive if there are still strong references, and `<L>` itself is still alive.
 impl<L> LivedIdentity for Weak<L>
 where
-    L: Lived + ?Sized + 'static,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
+    L: LivedIdentity + ?Sized + 'static,
 {
     fn full_id(&self) -> FullId {
         self.upgrade().map(|l| l.full_id()).unwrap_or(NONE_ID)
@@ -86,7 +87,6 @@ where
 impl<L> Lived for DynWeak<L>
 where
     L: Lived + ?Sized + 'static,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
 {
     fn is_alive(&self) -> bool {
         self.upgrade().as_ref().is_some_and(Lived::is_alive)
@@ -95,8 +95,7 @@ where
 /// [Weak<L>] is alive if there are still strong references, and `<L>` itself is still alive.
 impl<L> LivedIdentity for DynWeak<L>
 where
-    L: Lived + ?Sized + 'static,
-    L: for<'a> rkyv::SerializeUnsized<dyn DynSerializer + 'a>,
+    L: LivedIdentity + ?Sized + 'static,
 {
     fn full_id(&self) -> FullId {
         self.upgrade().map(|l| l.full_id()).unwrap_or(NONE_ID)
@@ -109,7 +108,7 @@ const NONE_ID: FullId = FullId {
 };
 
 #[repr(transparent)]
-#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize)]
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct OptionalDependency<L>(Option<L>);
 
 impl<L> OptionalDependency<L> {
@@ -136,7 +135,7 @@ impl<L> From<OptionalDependency<L>> for Option<L> {
 
 impl<L> Lived for OptionalDependency<L>
 where
-    L: Lived + 'static + for<'a> rkyv::Serialize<dyn DynSerializer + 'a>,
+    L: Lived + 'static,
 {
     fn is_alive(&self) -> bool {
         self.0.as_ref().is_none_or(Lived::is_alive)
@@ -145,10 +144,31 @@ where
 
 impl<L> LivedIdentity for OptionalDependency<L>
 where
-    L: Lived + 'static + for<'a> rkyv::Serialize<dyn DynSerializer + 'a>,
+    L: LivedIdentity + 'static,
 {
     fn full_id(&self) -> FullId {
         self.0.as_ref().map(|l| l.full_id()).unwrap_or(NONE_ID)
+    }
+}
+
+impl<Tr> Lived for Single<Tr>
+where
+    Tr: Singleton + Lived + ?Sized,
+{
+    fn is_alive(&self) -> bool {
+        <Tr as Lived>::is_alive(self)
+    }
+}
+
+impl<Tr> LivedIdentity for Single<Tr>
+where
+    Tr: Singleton + Lived + ?Sized,
+{
+    fn full_id(&self) -> FullId {
+        FullId {
+            namespace_id: Tr::Namespace::ID,
+            local_id: self.local_id(),
+        }
     }
 }
 
@@ -180,16 +200,10 @@ macro_rules! always_alive {
 /// - [OptionalDependency<Weak<dyn Lived>>] : [Some] => direct dependency; [None] => [always_alive]
 #[macro_export]
 macro_rules! dependently_alive {
-    ($ty: path, $field: ident) => {
+    ($ty: path, $field: tt) => {
         impl $crate::lived::Lived for $ty {
             fn is_alive(&self) -> bool {
                 $crate::lived::Lived::is_alive(&self.$field)
-            }
-        }
-
-        impl $crate::lived::LivedIdentity for $ty {
-            fn full_id(&self) -> $crate::dynx::FullId {
-                const { $crate::dynx::FullId::new::<$ty>() }
             }
         }
     };
@@ -201,7 +215,7 @@ pub use dependently_alive;
 
 use dynx::{
     Identity, IntoNamespace, Namespace,
-    dynx::{DynCheckBytes, DynDeserializer, DynSerializeUnsized, DynSerializer, utils},
+    dynx::{DynCheckBytes, DynDeserializer, DynSerializeUnsized, Single, Singleton, utils},
     registry::{
         self, ArchivedLocalId, Archiving, Deserializing, REGISTRY, Record, Registered,
         RegistryPlugin,
@@ -230,7 +244,7 @@ impl Namespace for NS {
     const ID: &'static str = "LIVED";
 }
 
-impl IntoNamespace for dyn Lived {
+impl IntoNamespace for dyn LivedAndSerializable {
     type Namespace = NS;
 }
 
@@ -247,7 +261,7 @@ pub struct LivedDeserializing {}
 impl Living {
     pub const fn new<T>(full_id: FullId) -> Self
     where
-        T: Lived + rkyv::Archive + 'static,
+        T: LivedAndSerializable + rkyv::Archive + 'static,
         <T as rkyv::Archive>::Archived:
             ArchivedLived + rkyv::DeserializeUnsized<T, dyn DynDeserializer>,
     {
@@ -259,14 +273,14 @@ impl Living {
                 metadata
             },
             full_id,
-            archiving: Archiving::new::<T, dyn Lived>(),
-            deserializing: Deserializing::new::<T, dyn Lived>(),
+            archiving: Archiving::new::<T, dyn LivedAndSerializable>(),
+            deserializing: Deserializing::new::<T, dyn LivedAndSerializable>(),
         }
     }
 
     pub const fn new_auto<T>() -> Self
     where
-        T: Lived + rkyv::Archive + Identity + 'static,
+        T: LivedAndSerializable + rkyv::Archive + Identity + 'static,
         <T as rkyv::Archive>::Archived:
             ArchivedLived + rkyv::DeserializeUnsized<T, dyn DynDeserializer>,
     {
@@ -286,7 +300,7 @@ inventory::submit! {
             registered.payload.archiving.replace(record.archiving);
             registered.payload.deserializing.replace(record.deserializing);
 
-            *registry.archived_metadata_entry::<dyn Lived>(record.lived_impl) = full_id_hash;
+            *registry.archived_metadata_entry::<dyn LivedAndSerializable>(record.lived_impl) = full_id_hash;
 
         }
     })
@@ -301,7 +315,7 @@ pub trait ArchivedLived:
 {
 }
 
-impl<'a> ArchiveUnsized for dyn Lived + 'a {
+impl<'a> ArchiveUnsized for dyn LivedAndSerializable + 'a {
     type Archived = dyn ArchivedLived + 'a;
 
     fn archived_metadata(&self) -> rkyv::ArchivedMetadata<Self> {
@@ -309,7 +323,7 @@ impl<'a> ArchiveUnsized for dyn Lived + 'a {
     }
 }
 
-impl<S> rkyv::SerializeUnsized<S> for dyn Lived + '_
+impl<S> rkyv::SerializeUnsized<S> for dyn LivedAndSerializable + '_
 where
     S: Fallible + Writer + Sharing + Allocator + ?Sized,
     S::Error: core::error::Error + Send + Sync + 'static,
@@ -345,11 +359,11 @@ unsafe impl ptr_meta::Pointee for dyn ArchivedLived + '_ {
     type Metadata = ptr_meta::DynMetadata<Self>;
 }
 
-unsafe impl ptr_meta::Pointee for dyn Lived + '_ {
+unsafe impl ptr_meta::Pointee for dyn LivedAndSerializable + '_ {
     type Metadata = ptr_meta::DynMetadata<Self>;
 }
 
-impl rkyv::traits::LayoutRaw for dyn Lived + '_ {
+impl rkyv::traits::LayoutRaw for dyn LivedAndSerializable + '_ {
     fn layout_raw(
         metadata: <Self as ptr_meta::Pointee>::Metadata,
     ) -> Result<std::alloc::Layout, std::alloc::LayoutError> {
@@ -357,7 +371,7 @@ impl rkyv::traits::LayoutRaw for dyn Lived + '_ {
     }
 }
 
-impl<D> DeserializeUnsized<dyn Lived, D> for dyn ArchivedLived
+impl<D> DeserializeUnsized<dyn LivedAndSerializable, D> for dyn ArchivedLived
 where
     D: Fallible + ?Sized,
     D::Error: 'static,
@@ -365,13 +379,13 @@ where
     unsafe fn deserialize_unsized(
         &self,
         deserializer: &mut D,
-        out: *mut dyn Lived,
+        out: *mut dyn LivedAndSerializable,
     ) -> Result<(), <D as Fallible>::Error> {
         unsafe { dynx::dynx::utils::deserialize::deserialize_unsized(self, deserializer, out) }
     }
 
-    fn deserialize_metadata(&self) -> <dyn Lived as ptr_meta::Pointee>::Metadata {
-        dynx::dynx::utils::deserialize::deserialize_metadata::<dyn Lived>(self)
+    fn deserialize_metadata(&self) -> <dyn LivedAndSerializable as ptr_meta::Pointee>::Metadata {
+        dynx::dynx::utils::deserialize::deserialize_metadata::<dyn LivedAndSerializable>(self)
     }
 }
 

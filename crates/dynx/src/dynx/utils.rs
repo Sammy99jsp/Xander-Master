@@ -137,13 +137,10 @@ pub mod deserialize {
 pub mod serialize {
     use rkyv::{
         rancor::Fallible,
-        ser::{Allocator, Sharing, Writer, WriterExt},
+        ser::{Allocator, Sharing, Writer},
     };
 
-    use crate::{
-        dynx::{DynSerializeUnsized, DynSerializer},
-        registry::ArchivedLocalId,
-    };
+    use crate::dynx::{DynSerializeUnsized, DynSerializer};
 
     pub unsafe fn serialize_unsized<Tr, S>(
         value: &Tr,

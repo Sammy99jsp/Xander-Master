@@ -2,14 +2,14 @@ use std::rc::Weak;
 
 use downcast_rs::{Downcast, impl_downcast};
 
-pub trait UI: Downcast + std::fmt::Debug {}
-impl_downcast!(UI);
+pub trait Ui: Downcast + std::fmt::Debug {}
+impl_downcast!(Ui);
 
 #[derive(Debug)]
 pub enum Component {
     Text(String),
-    RefRich(Weak<dyn UI>),
-    Rich(Box<dyn UI>),
+    RefRich(Weak<dyn Ui>),
+    Rich(Box<dyn Ui>),
     Multi(Vec<Component>),
 }
 

@@ -1,3 +1,2 @@
-pub mod magic;
-pub mod measure;
 pub mod game;
+pub mod io;

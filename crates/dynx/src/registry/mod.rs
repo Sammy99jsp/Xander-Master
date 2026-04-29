@@ -4,7 +4,6 @@ use rapidhash::v3::{rapidhash_v3, rapidhash_v3_file};
 use rkyv::ptr_meta;
 use std::{
     collections::{BTreeMap, HashMap},
-    rc::Rc,
     sync::LazyLock,
 };
 
@@ -211,22 +210,13 @@ impl Registry {
     where
         Tr: rkyv::ArchiveUnsized + IntoNamespace + ?Sized,
     {
-        println!("{:x?}", self.archived);
-        println!(
-            "Looking up archive of: {} with metadata {archived:?}",
-            Tr::Namespace::ID
-        );
         // SAFETY: We are just using the vtable ptr here.
         let meta =
             unsafe { std::mem::transmute::<ptr_meta::DynMetadata<Tr::Archived>, usize>(archived) };
         let local_id = self.archived.get(&hash(Tr::Namespace::ID))?.get(&meta)?;
 
-        println!("Got local id hash: {local_id:x?}");
-        // println!("{:#x?}", self.metadata);
-
         let ns = self.metadata.get(&hash(Tr::Namespace::ID))?;
 
-        println!("{:#x?}", &ns);
         Some(&ns.get(local_id)?.payload)
     }
 }
@@ -240,17 +230,14 @@ impl Default for Registry {
 pub static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
     let mut registry = Registry::default();
 
-    // println!("Loading Archive impls");
     for record in inventory::iter::<Record<Archiving>>() {
         registry.enroll(*record);
     }
 
-    // println!("Loading Deserialize impls");
     for record in inventory::iter::<Record<Deserializing>>() {
         registry.enroll(*record);
     }
 
-    // println!("Loading StoredSingleton impls");
     for record in inventory::iter::<Record<StoredSingleton>>() {
         registry.enroll(*record);
     }

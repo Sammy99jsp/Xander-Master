@@ -1,17 +1,29 @@
 use std::str::FromStr;
 
-use rkyv::{
-    bytecheck::CheckBytes,
-    primitive::ArchivedU32,
-    rancor::{Fallible, Source},
-};
-use thiserror::Error;
+use dynx::{Namespace, dynx::Single};
 
 use crate::engine::game::stats::proficiency::ProficiencyBonus;
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Monster {
     pub cr: Cr,
+    pub ty: Type,
+}
+
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct Type {
+    pub ty: Single<dyn MonsterType>,
+    pub tags: Vec<Single<dyn MonsterTag>>,
+}
+
+#[Namespace("MONSTER_TYPE" @ NS, derive(Singleton))]
+pub trait MonsterType: std::fmt::Debug {
+    fn title(&self) -> &'static str;
+}
+
+#[Namespace("MONSTER_TAG" @ TagNS, derive(Singleton))]
+pub trait MonsterTag: std::fmt::Debug {
+    fn title(&self) -> &'static str;
 }
 
 /// # Challenge Ratings
@@ -157,109 +169,120 @@ impl From<Cr> for String {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("{0} is not an integer challenge rating")]
-pub struct NonIntegerError(Cr);
+pub mod archiving {
+    use rkyv::{
+        bytecheck::CheckBytes,
+        primitive::ArchivedU32,
+        rancor::{Fallible, Source},
+    };
+    use thiserror::Error;
 
-impl TryFrom<Cr> for u8 {
-    type Error = NonIntegerError;
+    use super::{Cr, IntegerCr};
 
-    fn try_from(value: Cr) -> Result<Self, Self::Error> {
-        match value {
-            Cr::Integer(IntegerCr(i)) => Ok(i),
-            err => Err(NonIntegerError(err)),
+    #[derive(Debug, thiserror::Error)]
+    #[error("{0} is not an integer challenge rating")]
+    pub struct NonIntegerError(Cr);
+
+    impl TryFrom<Cr> for u8 {
+        type Error = NonIntegerError;
+
+        fn try_from(value: Cr) -> Result<Self, Self::Error> {
+            match value {
+                Cr::Integer(IntegerCr(i)) => Ok(i),
+                err => Err(NonIntegerError(err)),
+            }
         }
     }
-}
 
-// Serialization Logic
+    // Serialization Logic
 
-/// Archived representation for a CR.
-///
-/// We essentially use a union between integer CR values
-/// and the fractions as a utf-8 string.
-#[repr(transparent)]
-#[derive(rkyv::Portable, Clone, Copy)]
-pub struct ArchivedCr(ArchivedU32);
+    /// Archived representation for a CR.
+    ///
+    /// We essentially use a union between integer CR values
+    /// and the fractions as a utf-8 string.
+    #[repr(transparent)]
+    #[derive(rkyv::Portable, Clone, Copy)]
+    pub struct ArchivedCr(ArchivedU32);
 
-impl ArchivedCr {
-    fn from_cr(cr: &Cr) -> Self {
-        let bytes = match cr {
-            Cr::Integer(IntegerCr(cr)) => *cr as u32,
-            Cr::Eighth => u32::from_le_bytes(*b"1/8\0"),
-            Cr::Quarter => u32::from_le_bytes(*b"1/4\0"),
-            Cr::Half => u32::from_le_bytes(*b"1/2\0"),
-        };
+    impl ArchivedCr {
+        fn from_cr(cr: &Cr) -> Self {
+            let bytes = match cr {
+                Cr::Integer(IntegerCr(cr)) => *cr as u32,
+                Cr::Eighth => u32::from_le_bytes(*b"1/8\0"),
+                Cr::Quarter => u32::from_le_bytes(*b"1/4\0"),
+                Cr::Half => u32::from_le_bytes(*b"1/2\0"),
+            };
 
-        Self(ArchivedU32::from_native(bytes))
-    }
-}
-
-fn check_cr_repr(raw: u32) -> Result<Cr, InvalidArchivedCrError> {
-    // Check if it is a simple integer CR.
-    if matches!(raw, 0..=30) {
-        return unsafe { Ok(Cr::Integer(IntegerCr(raw as u8))) };
+            Self(ArchivedU32::from_native(bytes))
+        }
     }
 
-    // Otherwise, check to see if it is a fractional CR.
-    let as_utf8 = u32::to_le_bytes(raw);
-    match &as_utf8 {
-        b"1/8\0" => Ok(Cr::Eighth),
-        b"1/4\0" => Ok(Cr::Quarter),
-        b"1/2\0" => Ok(Cr::Half),
+    fn check_cr_repr(raw: u32) -> Result<Cr, InvalidArchivedCrError> {
+        // Check if it is a simple integer CR.
+        if matches!(raw, 0..=30) {
+            return unsafe { Ok(Cr::Integer(IntegerCr(raw as u8))) };
+        }
 
-        // Invalid representation.
-        _ => Err(InvalidArchivedCrError),
+        // Otherwise, check to see if it is a fractional CR.
+        let as_utf8 = u32::to_le_bytes(raw);
+        match &as_utf8 {
+            b"1/8\0" => Ok(Cr::Eighth),
+            b"1/4\0" => Ok(Cr::Quarter),
+            b"1/2\0" => Ok(Cr::Half),
+
+            // Invalid representation.
+            _ => Err(InvalidArchivedCrError),
+        }
     }
-}
 
-unsafe impl<C> CheckBytes<C> for ArchivedCr
-where
-    C: Fallible + ?Sized,
-    C::Error: Source,
-{
-    unsafe fn check_bytes(value: *const Self, _: &mut C) -> Result<(), <C as Fallible>::Error> {
-        let this = unsafe { *value };
-        check_cr_repr(this.0.to_native())
-            .map(|_| ())
-            .map_err(C::Error::new)
+    unsafe impl<C> CheckBytes<C> for ArchivedCr
+    where
+        C: Fallible + ?Sized,
+        C::Error: Source,
+    {
+        unsafe fn check_bytes(value: *const Self, _: &mut C) -> Result<(), <C as Fallible>::Error> {
+            let this = unsafe { *value };
+            check_cr_repr(this.0.to_native())
+                .map(|_| ())
+                .map_err(C::Error::new)
+        }
     }
-}
 
-unsafe impl rkyv::traits::NoUndef for ArchivedCr {}
+    unsafe impl rkyv::traits::NoUndef for ArchivedCr {}
 
-impl rkyv::Archive for Cr {
-    type Archived = ArchivedCr;
-    type Resolver = ();
+    impl rkyv::Archive for Cr {
+        type Archived = ArchivedCr;
+        type Resolver = ();
 
-    fn resolve(&self, (): Self::Resolver, out: rkyv::Place<Self::Archived>) {
-        out.write(ArchivedCr::from_cr(self))
+        fn resolve(&self, (): Self::Resolver, out: rkyv::Place<Self::Archived>) {
+            out.write(ArchivedCr::from_cr(self))
+        }
     }
-}
 
-impl<S> rkyv::Serialize<S> for Cr
-where
-    S: Fallible + ?Sized,
-{
-    fn serialize(
-        &self,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, <S as rkyv::rancor::Fallible>::Error> {
-        let cr = ArchivedCr::from_cr(self);
-        cr.0.serialize(serializer)
+    impl<S> rkyv::Serialize<S> for Cr
+    where
+        S: Fallible + ?Sized,
+    {
+        fn serialize(
+            &self,
+            serializer: &mut S,
+        ) -> Result<Self::Resolver, <S as rkyv::rancor::Fallible>::Error> {
+            let cr = ArchivedCr::from_cr(self);
+            cr.0.serialize(serializer)
+        }
     }
-}
 
-#[derive(Debug, Error)]
-#[error("Invalid archived CR, expected either 0-30 or \"1/8\", \"1/4\", \"1/2\" strings.")]
-pub struct InvalidArchivedCrError;
+    #[derive(Debug, Error)]
+    #[error("Invalid archived CR, expected either 0-30 or \"1/8\", \"1/4\", \"1/2\" strings.")]
+    pub struct InvalidArchivedCrError;
 
-impl<D> rkyv::Deserialize<Cr, D> for ArchivedCr
-where
-    D: Fallible + ?Sized,
-    D::Error: Source,
-{
-    fn deserialize(&self, _: &mut D) -> Result<Cr, D::Error> {
-        check_cr_repr(self.0.to_native()).map_err(D::Error::new)
+    impl<D> rkyv::Deserialize<Cr, D> for ArchivedCr
+    where
+        D: Fallible + ?Sized,
+        D::Error: Source,
+    {
+        fn deserialize(&self, _: &mut D) -> Result<Cr, D::Error> {
+            check_cr_repr(self.0.to_native()).map_err(D::Error::new)
+        }
     }
 }

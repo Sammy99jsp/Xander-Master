@@ -39,7 +39,7 @@ pub enum DExpr {
 ///
 /// Labels are ignored for [std::cmp::PartialEq] (`==`).
 #[derive(Debug, Clone)]
-pub struct Label(pub Rc<dyn xander_runtime::ui::UI>);
+pub struct Label(pub Rc<dyn xander_runtime::ui::Ui>);
 
 /// A set of die.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

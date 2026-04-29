@@ -6,28 +6,28 @@ use xander_runtime::ui;
 
 #[derive(Debug, PartialEq)]
 pub(in crate::engine::game::stats::d20_test) struct TestRoll;
-impl ui::UI for TestRoll {}
+impl ui::Ui for TestRoll {}
 
 /// Grant advantage to test rolls.
 ///
 /// The [d20::DExpr] must have originated from a [super::D20Test].
 #[derive(Debug)]
 pub struct Advantage {
-    pub reason: Option<Weak<dyn ui::UI>>,
+    pub reason: Option<Weak<dyn ui::Ui>>,
 }
 
-impl ui::UI for Advantage {}
+impl ui::Ui for Advantage {}
 
 #[derive(Debug)]
 pub struct Disadvantage {
-    pub reason: Option<Weak<dyn ui::UI>>,
+    pub reason: Option<Weak<dyn ui::Ui>>,
 }
 
-impl ui::UI for Disadvantage {}
+impl ui::Ui for Disadvantage {}
 
 #[derive(Debug, PartialEq)]
 struct CancelledOut;
-impl ui::UI for CancelledOut {}
+impl ui::Ui for CancelledOut {}
 
 /// Returns *new* [d20::DExpr] rolls with [Advantage] or [Disadvantage] imposed.
 pub trait D20TestRoll: Sized {
@@ -48,7 +48,7 @@ impl D20TestRoll for d20::DExpr {
     }
 }
 
-trait RollEffect: ui::UI + Sized {
+trait RollEffect: ui::Ui + Sized {
     type Opposite: RollEffect;
     const OPERATION: d20::SetOp;
 
@@ -114,7 +114,7 @@ macro_rules! find_labelled_impl {
         #[allow(unused)]
         pub fn $fn_name<L>(expr: &$($mut)? d20::$ty) -> Option<&$($mut)? d20::$ty>
         where
-            L: ui::UI,
+            L: ui::Ui,
         {
             let labelled_expr = match expr {
                 d20::$ty::Literal(..) => return None,

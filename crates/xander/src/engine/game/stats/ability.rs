@@ -1,7 +1,10 @@
-use std::ops::{Add, Sub};
+use std::{
+    ops::{Add, Sub},
+    rc::{Rc, Weak},
+};
 
+use crate::engine::game::creature::Creature;
 use d20::{BinaryOperator as BinOp, DExpr};
-use rkyv::rancor::{Fallible, Source};
 use thiserror::Error;
 
 #[repr(u8)]
@@ -90,6 +93,12 @@ impl AbilityScore {
 #[rustc_layout_scalar_valid_range_end(10)] // +10
 pub struct AbilityModifier(i8);
 
+impl AbilityModifier {
+    pub fn into_expr(&self, ability: Ability, me: Weak<Creature>) -> d20::DExpr {
+        d20::DExpr::from(self.0 as i32).label(Rc::new(ui::CreatureAbilityModifier { me, ability }))
+    }
+}
+
 impl From<AbilityModifier> for i32 {
     fn from(value: AbilityModifier) -> Self {
         value.0 as i32
@@ -148,14 +157,37 @@ pub mod profs {
     impl ProficiencyApplication for super::Ability {}
 }
 
-// Archiving
-impl<D> rkyv::Deserialize<AbilityScore, D> for rkyv::Archived<AbilityScore>
-where
-    D: Fallible + ?Sized,
-    D::Error: Source,
-{
-    fn deserialize(&self, deserializer: &mut D) -> Result<AbilityScore, D::Error> {
-        let inner = self.0.deserialize(deserializer)?;
-        AbilityScore::try_from(inner).map_err(D::Error::new)
+pub mod archiving {
+    use super::*;
+    use rkyv::{
+        Deserialize,
+        rancor::{Fallible, Source},
+    };
+
+    impl<D> Deserialize<AbilityScore, D> for rkyv::Archived<AbilityScore>
+    where
+        D: Fallible + ?Sized,
+        D::Error: Source,
+    {
+        fn deserialize(&self, deserializer: &mut D) -> Result<AbilityScore, D::Error> {
+            let inner = self.0.deserialize(deserializer)?;
+            AbilityScore::try_from(inner).map_err(D::Error::new)
+        }
     }
+}
+
+pub mod ui {
+    use std::rc::Weak;
+
+    use xander_runtime::ui;
+
+    use crate::engine::game::{creature::Creature, stats::Ability};
+
+    #[derive(Debug)]
+    pub struct CreatureAbilityModifier {
+        pub me: Weak<Creature>,
+        pub ability: Ability,
+    }
+
+    impl ui::Ui for CreatureAbilityModifier {}
 }

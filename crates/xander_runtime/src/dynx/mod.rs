@@ -1,4 +1,5 @@
 pub mod weak;
+pub mod cells;
 
 use std::{io::Read, marker::PhantomData};
 

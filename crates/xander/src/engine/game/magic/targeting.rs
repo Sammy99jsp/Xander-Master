@@ -2,7 +2,7 @@ use dynx::{Member, Namespace};
 use xander_runtime::ui;
 
 #[Namespace("SPELL::TARGETING" @ NS, derive(Singleton))]
-pub trait Targeting: ui::UI + Send + Sync {
+pub trait Targeting: ui::Ui + Send + Sync {
     fn cloned(&self) -> Box<dyn Targeting>;
 }
 
@@ -15,7 +15,7 @@ impl Clone for Box<dyn Targeting> {
 #[derive(Debug, Clone)]
 pub struct Creature;
 
-impl ui::UI for Creature {}
+impl ui::Ui for Creature {}
 
 #[Member("CREATURE", register(Singleton))]
 impl Targeting for Creature {

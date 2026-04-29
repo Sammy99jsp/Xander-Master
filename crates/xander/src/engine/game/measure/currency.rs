@@ -8,7 +8,7 @@ impl Namespace for NS {
     const ID: &'static str = "CURRENCY";
 }
 
-pub trait Coin: Identity<Parent = Currency> + ui::UI {
+pub trait Coin: Identity<Parent = Currency> + ui::Ui {
     fn value(&self) -> CP;
     fn amount(&self) -> u32;
 
@@ -53,7 +53,7 @@ macro_rules! coins {
                 }
             }
 
-            impl ui::UI for $coin {}
+            impl ui::Ui for $coin {}
         )*
     };
 }

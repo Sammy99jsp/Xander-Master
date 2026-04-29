@@ -10,7 +10,7 @@ pub mod school;
 pub mod targeting;
 
 #[Namespace("SPELL" @ NS, derive(Singleton))]
-pub trait Spell: ui::UI + Cast + std::fmt::Debug + Send + Sync {
+pub trait Spell: ui::Ui + Cast + std::fmt::Debug + Send + Sync {
     fn range(&self) -> range::Range;
     fn level(&self) -> level::Level;
     fn target(&self) -> Single<dyn targeting::Targeting>;
