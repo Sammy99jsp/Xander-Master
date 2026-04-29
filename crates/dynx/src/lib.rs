@@ -1,4 +1,5 @@
-#![feature(unsize)]
+#![allow(internal_features)]
+#![feature(unsize, ptr_metadata, core_intrinsics, const_cmp, const_trait_impl)]
 
 pub mod dynx;
 pub mod macros;
@@ -6,6 +7,7 @@ pub mod registry;
 
 pub use bytecheck;
 pub use rkyv;
+pub use rapidhash;
 
 pub use registry::{Identity, IdentityBase, IntoNamespace, Namespace};
 
@@ -21,8 +23,8 @@ pub use registry::{Identity, IdentityBase, IntoNamespace, Namespace};
 /// Each trait must have a [trait@Namespace] type associated with it.
 ///
 /// By using the
-/// ```
-/// # use scratchy::Namespace;
+/// ```ignore
+/// # use dynx::Namespace;
 /// #
 /// #[Namespace("$ID" @ NS)]
 /// # pub trait MyNamespace {}
@@ -31,7 +33,7 @@ pub use registry::{Identity, IdentityBase, IntoNamespace, Namespace};
 /// which will have a [const@Namespace::ID] of `"$ID"`.
 ///
 /// ```
-/// use scratchy::Namespace;
+/// use dynx::Namespace;
 ///
 /// #[Namespace("ID" @ NS, derive(Archive, Serialize, Deserialize))]
 /// pub trait MyNamespace {}
@@ -39,7 +41,7 @@ pub use registry::{Identity, IdentityBase, IntoNamespace, Namespace};
 ///
 /// Alternatively, you can create your own namespace and reference it by omitting the string literal:
 /// ```
-/// use scratchy::Namespace;
+/// use dynx::Namespace;
 ///
 /// #[Namespace(@NS, derive(Archive, Serialize, Deserialize))]
 /// pub trait MyNamespace {}
@@ -60,11 +62,11 @@ pub use dynx_macros::Namespace;
 ///
 /// # Usage
 /// ```
-/// # use scratchy::Namespace;
+/// # use dynx::Namespace;
 /// use bytecheck::CheckBytes;
 /// use rkyv::{Archive, Archived, Deserialize, Serialize};
 ///
-/// use scratchy::Member;
+/// use dynx::Member;
 /// #
 /// # #[Namespace("ID" @ NS, derive(Archive(ArchivedMyNamespace), Serialize, Deserialize, CheckBytes))]
 /// # pub trait MyNamespace {
@@ -88,3 +90,5 @@ pub use dynx_macros::Namespace;
 /// ```
 #[doc(inline)]
 pub use dynx_macros::Member;
+
+pub use dynx_macros::id_case;

@@ -1,7 +1,7 @@
 use rkyv::{
     SerializeUnsized,
     rancor::Fallible,
-    ser::{Allocator, Positional, Sharing, Writer, sharing::SharingState},
+    ser::{Allocator, Positional, Sharing, Writer, WriterExt, sharing::SharingState},
 };
 
 use crate::dynx::error::DynError;
@@ -63,7 +63,11 @@ impl<'a> Sharing for dyn DynSerializer + 'a {
         DynSerializer::start_sharing(self, address)
     }
 
-    fn finish_sharing(&mut self, address: usize, pos: usize) -> Result<(), <Self as Fallible>::Error> {
+    fn finish_sharing(
+        &mut self,
+        address: usize,
+        pos: usize,
+    ) -> Result<(), <Self as Fallible>::Error> {
         DynSerializer::finish_sharing(self, address, pos)
     }
 }
@@ -115,3 +119,12 @@ where
         SerializeUnsized::serialize_unsized(self, serializer)
     }
 }
+
+// impl<'a, T> DynSerializeUnsized<'a> for T
+// where
+//     T: SerializeUnsized<dyn DynSerializer + 'a>,
+// {
+//     fn serialize_unsized(&self, serializer: &'a mut dyn DynSerializer) -> Result<usize, DynError> {
+//         SerializeUnsized::serialize_unsized(self, serializer)
+//     }
+// }

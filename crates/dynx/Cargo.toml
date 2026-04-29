@@ -8,3 +8,6 @@ rkyv = { workspace = true }
 bytecheck = { workspace = true }
 inventory = { workspace = true }
 dynx_macros = { path = "../dynx_macros" }
+typeid = "1.0.3"
+rapidhash = "4.4.1"
+downcast-rs.workspace = true

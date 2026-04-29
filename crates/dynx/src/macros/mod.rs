@@ -13,7 +13,7 @@ pub enum DocumentationOnly {}
 /// The `derive` helper.
 ///
 /// ```
-/// # use scratchy::Namespace;
+/// # use dynx::Namespace;
 /// # #[Namespace("TR" @ NS,
 /// derive(Archive, Serialize, Deserialize, CheckBytes)
 /// # )]
@@ -26,19 +26,14 @@ pub enum DocumentationOnly {}
 /// - `Serialize` => [SerializeUnsized]
 /// - `Deserialize` => [DeserializeUnsized]
 /// - `CheckBytes` => [CheckBytes]
+/// - `Singleton` => [Singleton]
 ///
 /// # Usage
-///
-/// When you write `derive(Archive, ..)`, the [macro@Namespace] macro will generate a special "archive trait"
-/// (e.g. `TrArchive` for your trait called `Tr`), which will have all of the necessary
-/// supertrait requirements for `dyn Tr` and `dyn TrArchive` to implement the respective traits
-/// (e.g. [SerializeUnsized], [DeserializeUnsized], etc.).
-///
 /// ## Singleton Traits
 /// If your trait is only implemented by singleton types (aka unit structs),
 /// you may use `derive(Singleton)`.
 /// ```
-/// # use scratchy::Namespace;
+/// # use dynx::Namespace;
 /// # #[Namespace("TR" @ NS,
 /// derive(Singleton)
 /// # )]
@@ -48,10 +43,17 @@ pub enum DocumentationOnly {}
 /// Singleton namespace traits can be freely archived, serialized, and deserialized
 /// through [Single] without any extra work.
 ///
+/// ## Archiving
+///
+/// When you write `derive(Archive, ..)`, the [macro@Namespace] macro will generate a special "archive trait"
+/// (e.g. `TrArchive` for your trait called `Tr`), which will have all of the necessary
+/// supertrait requirements for `dyn Tr` and `dyn TrArchive` to implement the respective traits
+/// (e.g. [SerializeUnsized], [DeserializeUnsized], etc.).
+///
 /// ## Explicit Archive Trait Name
 /// You can explicitly specify the name for the archive trait by using:
 /// ```
-/// # use scratchy::Namespace;
+/// # use dynx::Namespace;
 /// # #[Namespace("TR" @ NS,
 /// derive(Archive(MyArchiveTraitNameHere))
 /// # )]
@@ -68,7 +70,7 @@ pub enum DocumentationOnly {}
 /// your trait object:
 ///
 /// ```
-/// use scratchy::{
+/// use dynx::{
 ///     dynx::DynCheckBytes, Namespace,
 ///     registry::{Registered, Archiving, Deserializing}
 /// };
@@ -95,7 +97,7 @@ pub fn derive(_: DocumentationOnly) {}
 /// ```
 /// # use bytecheck::{CheckBytes};
 /// # use rkyv::{Archive, Deserialize, Serialize};
-/// # use scratchy::{Namespace, Member};
+/// # use dynx::{Namespace, Member};
 /// #
 /// # #[Namespace("TR" @ NS, derive(Archive, Serialize, Deserialize, CheckBytes))]
 /// # pub trait NamespaceTr {}
@@ -120,4 +122,6 @@ pub fn derive(_: DocumentationOnly) {}
 /// If you do not need to use register these implementations, you can entirely omit [`register(..)`](register) from
 /// the [`#[Member(..)]`](macro@Member) macro.
 ///
-pub fn register(_: DocumentationOnly) {}
+#[allow(unused_variables, non_snake_case)]
+pub fn register(Archive: DocumentationOnly, Deserialize: DocumentationOnly) {}
+

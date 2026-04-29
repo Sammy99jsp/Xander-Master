@@ -1,0 +1,23 @@
+[package]
+name = "xander"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+
+[dependencies]
+rkyv.workspace = true
+downcast-rs.workspace = true
+thiserror.workspace = true
+smol.workspace = true
+d20 = { path = "../d20", package = "xander_d20", features = ["rand"] }
+xander_runtime = { path = "../xander_runtime" }
+dynx = {path = "../dynx"}
+const_format = { version = "0.2.35", features = ["fmt"] }
+inventory = "0.3.22"
+
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "doc_nightly"]

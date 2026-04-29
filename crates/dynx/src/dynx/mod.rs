@@ -3,6 +3,7 @@ pub mod de;
 pub mod error;
 pub mod ser;
 pub mod singleton;
+pub mod utils;
 
 pub use self::{
     byte_check::{DynByteChecker, DynCheckBytes},

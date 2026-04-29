@@ -1,8 +1,10 @@
+#![feature(fn_traits, unboxed_closures)]
+
 use quote::quote;
 
 mod member;
 mod namespace;
-mod paths;
+pub(crate) mod utils;
 
 /// See documentation of re-export in the main crate [scratchy::Namespace].
 #[proc_macro_attribute]
@@ -46,4 +48,18 @@ pub fn Member(
     let tr_impls = args.process_for(impl_);
 
     tr_impls.into()
+}
+
+#[proc_macro]
+pub fn id_case(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ident = syn::parse_macro_input!(tokens as syn::Ident);
+    let lit = syn::LitStr::new(
+        &heck::AsShoutySnakeCase(ident.to_string()).to_string(),
+        ident.span(),
+    );
+
+    quote::quote! {
+        #lit
+    }
+    .into()
 }

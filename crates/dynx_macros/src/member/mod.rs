@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{parse::Parse, punctuated::Punctuated, spanned::Spanned};
 
-use crate::paths::{self, ty_for};
+use crate::utils::{PathExt as _, paths::*};
 
 pub struct Args {
     local_id: syn::Expr,
@@ -68,7 +68,7 @@ impl Args {
 
         // Implement Identity
         let identity_impl = {
-            let identity = paths::krate::Identity();
+            let identity = &krate::Identity;
             let local_id = &self.local_id;
             let local_id_ident = syn::Ident::new("LOCAL_ID", local_id.span());
 
@@ -94,7 +94,7 @@ impl Args {
         }) = &self.register
         {
             // Documentation for the `register` helper for the macro.
-            let mut register = paths::krate::register();
+            let mut register = krate::register();
             register
                 .segments
                 .last_mut()
@@ -112,20 +112,20 @@ impl Args {
             // Implement Registered<Archiving>, if asked to.
             if let Some(Archive(archive_kw)) = archive {
                 registered_archive = {
-                    let registered_archive = paths::krate::Registered(ty_for({
-                        let mut p = paths::krate::Archiving();
+                    let registered_archive = krate::Registered({
+                        let mut p = krate::Archiving();
                         p.segments
                             .last_mut()
                             .unwrap()
                             .ident
                             .set_span(archive_kw.span());
-                        p
-                    }));
+                        p.to_type()
+                    });
 
-                    let archived = paths::rkyv::Archived(self_ty.clone());
-                    let archiving = paths::krate::Archiving();
-                    let record = paths::krate::Record();
-                    let submit = paths::inventory::submit();
+                    let archived = rkyv::Archived(self_ty.clone());
+                    let archiving = &krate::Archiving;
+                    let record = &krate::Record;
+                    let submit = &inventory::submit;
 
                     let span = archive_kw.span();
                     quote_spanned! { span =>
@@ -141,20 +141,20 @@ impl Args {
             // Implement Registered<Deserializing>, if asked to.
             if let Some(Deserialize(deserialize_kw)) = deserialize {
                 registered_deserialize = {
-                    let registered_deserialize = paths::krate::Registered(ty_for({
-                        let mut p = paths::krate::Deserializing();
+                    let registered_deserialize = krate::Registered({
+                        let mut p = krate::Deserializing();
                         p.segments
                             .last_mut()
                             .unwrap()
                             .ident
                             .set_span(deserialize_kw.span());
-                        p
-                    }));
+                        p.to_type()
+                    });
 
-                    let archived = paths::rkyv::Archived(self_ty.clone());
-                    let deserializing = paths::krate::Deserializing();
-                    let record = paths::krate::Record();
-                    let submit = paths::inventory::submit();
+                    let archived = rkyv::Archived(self_ty.clone());
+                    let deserializing = krate::Deserializing();
+                    let record = krate::Record();
+                    let submit = inventory::submit();
 
                     let span = deserialize_kw.span();
                     quote_spanned! { span =>
@@ -169,11 +169,11 @@ impl Args {
 
             // Implement Registered<StoredSingleton>, if asked to.
             if let Some(Singleton(singleton_kw)) = singleton {
-                let submit = paths::inventory::submit();
+                let submit = inventory::submit();
 
-                let registered = paths::krate::Registered(ty_for(paths::krate::StoredSingleton()));
-                let record = paths::krate::Record();
-                let mut stored_singleton = paths::krate::StoredSingleton();
+                let registered = krate::Registered(krate::StoredSingleton().to_type());
+                let record = krate::Record();
+                let mut stored_singleton = krate::StoredSingleton();
 
                 stored_singleton
                     .segments
