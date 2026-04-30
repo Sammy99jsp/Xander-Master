@@ -150,8 +150,7 @@ impl Sub<DExpr> for AbilityModifier {
 pub mod profs {
     use crate::prelude::proficiency::*;
 
-    identity!(super::Ability: dyn ProficiencyApplicationBase, "ABILITY");
-    register!(super::Ability: dyn ProficiencyApplicationBase, register(Archive, Deserialize));
+    register!(super::Ability: dyn ProficiencyApplicationBase, register(Identity("ABILITY"), Archive, Deserialize));
 
     impl ArchivedProficiencyApplicationBase for rkyv::Archived<super::Ability> {}
     impl ProficiencyApplication for super::Ability {}
@@ -179,15 +178,19 @@ pub mod archiving {
 pub mod ui {
     use std::rc::Weak;
 
-    use xander_runtime::ui;
+    use xander_runtime::{register, ui};
 
     use crate::engine::game::{creature::Creature, stats::Ability};
 
-    #[derive(Debug)]
+    #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     pub struct CreatureAbilityModifier {
         pub me: Weak<Creature>,
         pub ability: Ability,
     }
 
     impl ui::Ui for CreatureAbilityModifier {}
+    register!(
+        CreatureAbilityModifier,
+        register(Identity("CREATURE_ABILITY_MODIFIER"))
+    );
 }

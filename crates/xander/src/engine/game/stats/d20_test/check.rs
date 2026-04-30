@@ -75,7 +75,7 @@ impl TestResult<Check> for CheckResult {
 pub mod decisions {
     use std::rc::Weak;
 
-    use xander_runtime::{flow::decision::prelude::*, identity, ui};
+    use xander_runtime::{flow::decision::prelude::*, ui};
 
     use crate::engine::game::{creature::Creature, stats::d20_test::Check};
 
@@ -102,7 +102,7 @@ pub mod decisions {
         }
     }
 
-    identity!(GMDecidesCheckResult: Decision, "CHECK::GM_DECIDES");
+    register!(GMDecidesCheckResult: Decision, register(Identity("CHECK::GM_DECIDES")));
     impl IntoDecision for GMDecidesCheckResult {
         type Response = super::CheckResult;
         type Kind = Selection;
@@ -137,7 +137,7 @@ pub mod events {
     use xander_runtime::{
         cancellable,
         flow::{Event, event::EventBase},
-        identity, ui,
+        register, ui,
     };
 
     use crate::engine::game::{Game, creature::Creature, stats::ability::AbilityModifier};
@@ -161,7 +161,7 @@ pub mod events {
         pub cancelled: Option<CheckCancelled>,
     }
 
-    identity!(PreRollCheckEvent: dyn EventBase<Game>, "CHECK::PRE_ROLL");
+    register!(PreRollCheckEvent: dyn EventBase<Game>, register(Identity("CHECK::PRE_ROLL")));
     impl Event<Game> for PreRollCheckEvent {
         type Resolved = PreRollPayload<Check>;
 
@@ -207,7 +207,7 @@ pub mod events {
         pub cancelled: Option<CheckCancelled>,
     }
 
-    identity!(PreResultCheckEvent: dyn EventBase<Game>, "CHECK::PRE_RESULT");
+    register!(PreResultCheckEvent: dyn EventBase<Game>, register(Identity("CHECK::PRE_RESULT")));
     impl Event<Game> for PreResultCheckEvent {
         type Resolved = PreResultPayload<Check>;
 
@@ -248,7 +248,7 @@ pub mod events {
         pub cancelled: Option<CheckCancelled>,
     }
 
-    identity!(PostResultCheckEvent: dyn EventBase<Game>, "CHECK::POST_RESULT");
+    register!(PostResultCheckEvent: dyn EventBase<Game>, register(Identity("CHECK::POST_RESULT")));
     impl Event<Game> for PostResultCheckEvent {
         type Resolved = Self;
 

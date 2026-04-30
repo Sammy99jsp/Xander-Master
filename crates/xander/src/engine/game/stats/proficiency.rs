@@ -98,22 +98,30 @@ impl ProficiencyBonus {
         self.0 as i32
     }
 
-    pub fn into_expr(&self, me: DynWeak<Creature>, prof: DynWeak<dyn ProficiencyBase>) -> d20::DExpr {
+    pub fn into_expr(
+        &self,
+        me: DynWeak<Creature>,
+        prof: DynWeak<dyn ProficiencyBase>,
+    ) -> d20::DExpr {
         d20::DExpr::from(self.value()).label(Rc::new(ui::ProficiencyBonusHint { me, prof }))
     }
 }
 
 pub mod ui {
 
-    use xander_runtime::DynWeak;
+    use xander_runtime::{DynWeak, register};
 
     use crate::engine::game::{creature::Creature, stats::proficiency::ProficiencyBase};
 
-    #[derive(Debug)]
+    #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     pub struct ProficiencyBonusHint {
         pub me: DynWeak<Creature>,
         pub prof: DynWeak<dyn ProficiencyBase>,
     }
 
     impl xander_runtime::ui::Ui for ProficiencyBonusHint {}
+    register!(
+        ProficiencyBonusHint,
+        register(Identity("PROFICIENCY_BONUS_HINT"))
+    );
 }

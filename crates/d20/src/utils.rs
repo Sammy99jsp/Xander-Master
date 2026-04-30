@@ -1,10 +1,16 @@
-use crate::{BinaryOperator as Op, DExpr, Dice, Int, Label, Literal, UnaryOperator, ValTree};
+use crate::{
+    BinaryOperator as Op, DExpr, Dice, Int, Label, Labeled, Literal, UnaryOperator, ValTree,
+};
 
 // Labels / UI
 
 impl Label {
     pub const fn new<UI: xander_runtime::ui::Ui>(ui: Rc<UI>) -> Self {
-        Self(ui)
+        Self(Some(ui))
+    }
+
+    pub const fn empty() -> Self {
+        Self(None)
     }
 }
 
@@ -25,7 +31,7 @@ impl DExpr {
     where
         UI: xander_runtime::ui::Ui,
     {
-        Self::Labeled(Box::new(self), Label::new(ui))
+        Self::Labeled(Labeled(Box::new(self), Label::new(ui)))
     }
 }
 
@@ -34,7 +40,7 @@ impl ValTree {
     where
         UI: xander_runtime::ui::Ui,
     {
-        Self::Labeled(Box::new(self), Label::new(ui))
+        Self::Labeled(Labeled(Box::new(self), Label::new(ui)))
     }
 }
 

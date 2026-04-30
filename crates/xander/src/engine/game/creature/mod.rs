@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use xander_runtime::flow::io::Actor;
 
-#[derive(rkyv::Archive, rkyv::Serialize, Debug)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Debug)]
 pub struct Creature {
     pub id: CreatureId,
     pub name: String,
@@ -59,9 +59,11 @@ impl Creature {
 }
 
 pub mod ui {
-    use xander_runtime::ui;
+    use super::Creature;
+    use xander_runtime::{register, ui};
 
-    impl ui::Ui for super::Creature {}
+    impl ui::Ui for Creature {}
+    register!(Creature, register(Identity("CREATURE")));
 }
 
 pub mod provisos {
@@ -191,7 +193,7 @@ mod tests {
         let archived = access::<rkyv::Archived<Rc<Creature>>, Error>(&bytes).unwrap();
         let mut deserializer = Pool::default();
         let deserializer = Strategy::<_, Error>::wrap(&mut deserializer);
-        let result = archived
+        let result: Rc<Creature> = archived
             .get()
             .deserialize(deserializer as &mut dyn DynDeserializer)
             .unwrap();

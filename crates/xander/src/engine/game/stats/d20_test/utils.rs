@@ -2,18 +2,19 @@
 
 use std::rc::{Rc, Weak};
 
-use xander_runtime::ui;
+use xander_runtime::{DynWeak, register, ui};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub(in crate::engine::game::stats::d20_test) struct TestRoll;
 impl ui::Ui for TestRoll {}
+register!(TestRoll, register(Identity("TEST_ROLL")));
 
 /// Grant advantage to test rolls.
 ///
 /// The [d20::DExpr] must have originated from a [super::D20Test].
 #[derive(Debug)]
 pub struct Advantage {
-    pub reason: Option<Weak<dyn ui::Ui>>,
+    pub reason: Option<DynWeak<dyn ui::Ui>>,
 }
 
 impl ui::Ui for Advantage {}
@@ -134,8 +135,8 @@ macro_rules! find_labelled_impl {
             };
 
             // If the label doesn't match...
-            if let d20::$ty::Labeled(_, with_label) = labelled_expr
-                && !with_label.0.is::<L>()
+            if let d20::$ty::Labeled(d20::Labeled(_, with_label)) = labelled_expr
+                && !with_label.0.as_ref().is_some_and(|l| l.is::<L>())
             {
                 return None;
             }

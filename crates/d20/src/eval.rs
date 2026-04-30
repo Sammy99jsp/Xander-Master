@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::{DExpr, Decimal, Int, Label, Selector, SetOp};
+use xander_runtime::dynx::rkyv;
+
+use crate::{DExpr, Decimal, Int, Label, Labeled, Selector, SetOp};
 
 use super::{BinaryOperator, Literal, Selection, SetOperator, UnaryOperator};
 
@@ -22,28 +24,52 @@ pub enum UnevalTree {
 /// An evaluated [DExpr].
 ///
 /// Use [ValTree::result] to get the result as an [i32].
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(
+    Debug, Clone, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
+#[rkyv(bytecheck(bounds(__C: rkyv::validation::ArchiveContext)))]
+#[rkyv(serialize_bounds(__S: rkyv::ser::Writer + rkyv::ser::Allocator))]
+#[rkyv(deserialize_bounds(<__D as rkyv::rancor::Fallible>::Error: rkyv::rancor::Source))]
 pub enum ValTree {
     Literal(Literal),
     Dice(DiceRoll),
-    UnaryOperation(UnaryOperator, Box<Self>),
-    Set(Vec<Self>),
-    SetOperation(Box<Self>, ValSetOp),
-    BinaryOperation(Box<Self>, BinaryOperator, Box<Self>),
-    Labeled(Box<Self>, Label),
+    UnaryOperation(UnaryOperator, #[rkyv(omit_bounds)] Box<Self>),
+    Set(#[rkyv(omit_bounds)] Vec<Self>),
+    SetOperation(#[rkyv(omit_bounds)] Box<Self>, ValSetOp),
+    BinaryOperation(
+        #[rkyv(omit_bounds)] Box<Self>,
+        BinaryOperator,
+        #[rkyv(omit_bounds)] Box<Self>,
+    ),
+    Labeled(#[rkyv(with = crate::dynx::Unlabeled, omit_bounds)] Labeled<Self>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv, serialize_bounds(__S: rkyv::ser::Writer), deserialize_bounds(__D::Error: rkyv::rancor::Source), bytecheck(bounds(__C: rkyv::validation::ArchiveContext)))]
 pub enum DieRoll {
     Normal(u32),
     Replace {
         original: u32,
         op: RollSetOp,
+        #[rkyv(omit_bounds)]
         new: Box<Self>,
     },
     InAddition {
         original: u32,
         op: RollSetOp,
+        #[rkyv(omit_bounds)]
         new: Box<Self>,
     },
 }
@@ -125,19 +151,70 @@ impl DieRoll {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct DiceRoll {
     pub dice: crate::Dice,
     pub results: Vec<DieRoll>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct ValSetOp(pub ValSetOperator, pub Selection);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct RollSetOp(pub RollSetOperator, pub Selection);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum ValSetOperator {
     /// Keeps all matched values.
     Keep,
@@ -149,7 +226,20 @@ pub enum ValSetOperator {
     Maximum,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum RollSetOperator {
     /// Rerolls all matched values until none match. (Dice only)
     Reroll,
@@ -185,7 +275,7 @@ impl DExpr {
             DExpr::Literal(literal) => UnevalTree::Literal(literal.clone()),
             DExpr::Dice(dice) => UnevalTree::Roll(DiceRoll { dice: *dice, results: Vec::new() }),
             DExpr::UnaryOperation(unary_operator, expr) => UnevalTree::UnaryOperation(*unary_operator, Box::new(expr.to_uneval()?)),
-            DExpr::Labeled(expr, lbl) => UnevalTree::Labeled(Box::new(expr.to_uneval()?), lbl.clone()),
+            DExpr::Labeled(Labeled(expr, lbl)) => UnevalTree::Labeled(Box::new(expr.to_uneval()?), lbl.clone()),
             DExpr::Set(exprs) => UnevalTree::Set(
                 exprs
                     .iter()
@@ -263,12 +353,7 @@ impl RollSetOp {
 }
 
 impl UnevalTree {
-    pub(crate) fn rolls_mut(
-        &mut self,
-    ) -> (
-        Vec<&mut DiceRoll>,
-        Vec<(&mut DiceRoll, &RollSetOp)>,
-    ) {
+    pub(crate) fn rolls_mut(&mut self) -> (Vec<&mut DiceRoll>, Vec<(&mut DiceRoll, &RollSetOp)>) {
         fn gather_rolls_mut<'a>(
             tree: &'a mut UnevalTree,
             roll_once: &mut Vec<&'a mut DiceRoll>,
@@ -316,7 +401,9 @@ impl UnevalTree {
             UnevalTree::BinaryOperation(lhs, op, rhs) => {
                 ValTree::BinaryOperation(Box::new(lhs.finished()), op, Box::new(rhs.finished()))
             }
-            UnevalTree::Labeled(tree, label) => ValTree::Labeled(Box::new(tree.finished()), label),
+            UnevalTree::Labeled(tree, label) => {
+                ValTree::Labeled(Labeled(Box::new(tree.finished()), label))
+            }
             UnevalTree::RollSetOperation(roll, _) => ValTree::Dice(roll),
         }
     }
@@ -344,7 +431,7 @@ impl ValTree {
 
     fn _value(&self) -> WorkingOut {
         match self {
-            ValTree::Labeled(tree, _) => tree._value(),
+            ValTree::Labeled(Labeled(tree, _)) => tree._value(),
 
             // TODO: Better handling for these two primitives.
             ValTree::Literal(Literal::Int(int)) => WorkingOut::from(int.0),
@@ -437,7 +524,7 @@ impl ValSetOp {
                 Box::new(trees.iter().map(|tree| tree._value())) as Box<dyn Iterator<Item = f64>>
             }
             ValTree::Dice(roll) => Box::new(roll.results.iter().map(|die| die.value() as f64)),
-            ValTree::Labeled(tree, _) => return self.eval(tree.as_ref()),
+            ValTree::Labeled(Labeled(tree, _)) => return self.eval(tree.as_ref()),
             _ => unimplemented!("Should not have non-sets in a set op!"),
         };
 

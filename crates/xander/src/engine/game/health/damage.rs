@@ -114,23 +114,23 @@ impl Damage<d20::DExpr> {
             let d20::ValTree::BinaryOperation(
                 lhs,
                 d20::BinaryOperator::Add,
-                box d20::ValTree::Labeled(box rhs, d20::Label(label)),
+                box d20::ValTree::Labeled(d20::Labeled(box rhs, d20::Label(label))),
             ) = sum
             else {
                 break;
             };
 
-            let ty: DamageType = unsafe { *label.downcast_rc().unwrap_unchecked() };
+            let ty: DamageType = unsafe { *label.unwrap().downcast_rc().unwrap_unchecked() };
             output.parts.insert(ty, rhs);
 
             sum = *lhs;
         }
 
-        let d20::ValTree::Labeled(box lhs, d20::Label(label)) = sum else {
+        let d20::ValTree::Labeled(d20::Labeled(box lhs, d20::Label(label))) = sum else {
             unreachable!("Should be single item at this stage!")
         };
 
-        let ty: DamageType = unsafe { *label.downcast_rc().unwrap_unchecked() };
+        let ty: DamageType = unsafe { *label.unwrap().downcast_rc().unwrap_unchecked() };
         output.parts.insert(ty, lhs);
 
         output
@@ -206,9 +206,10 @@ where
 // UI
 
 pub mod ui {
-    use xander_runtime::ui;
+    use xander_runtime::{register, ui};
 
     use super::DamageType;
 
     impl ui::Ui for DamageType {}
+    register!(DamageType, register(Identity("HEALTH::DAMAGE_TYPE")));
 }

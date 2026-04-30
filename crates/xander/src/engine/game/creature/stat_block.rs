@@ -113,8 +113,7 @@ pub mod provisos {
         pub ability: Ability,
     }
 
-    identity!(BaseModifier: dyn ProvisoBase<AbilityModifier>, "MODIFIER_BASE");
-    register!(BaseModifier: dyn ProvisoBase<AbilityModifier>, register(Archive, Deserialize, Lived));
+    register!(BaseModifier: dyn ProvisoBase<AbilityModifier>, register(Identity("MODIFIER_BASE"), Archive, Deserialize, Lived));
     always_alive!(BaseModifier);
 
     impl ArchivedProvisoBase<AbilityModifier> for rkyv::Archived<BaseModifier> {}
@@ -147,8 +146,7 @@ pub mod provisos {
         }
     }
 
-    identity!(BaseScore: dyn ProvisoBase<AbilityScore>, "BASE_SCORE");
-    register!(BaseScore: dyn ProvisoBase<AbilityScore>, register(Archive, Deserialize, Lived));
+    register!(BaseScore: dyn ProvisoBase<AbilityScore>, register(Identity("BASE_SCORE"), Archive, Deserialize, Lived));
     always_alive!(BaseScore);
 
     impl ArchivedProvisoBase<AbilityScore> for rkyv::Archived<BaseScore> {}

@@ -11,8 +11,7 @@ use xander_runtime::{
         decision::Response,
         dispatcher::DispatchState,
         io::{Decision, IntoDecision},
-    },
-    identity,
+    }, register,
 };
 
 use crate::{
@@ -344,7 +343,7 @@ impl<Response> std::fmt::Debug for NoDecision<Response> {
     }
 }
 
-identity!(@<Response> NoDecision<Response>: Decision, "NO_DECISION");
+register!(@<Response> NoDecision<Response>: Decision, register(Identity("NO_DECISION")));
 impl<Response> IntoDecision for NoDecision<Response>
 where
     Response: xander_runtime::flow::decision::Response,

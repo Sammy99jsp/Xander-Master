@@ -1,4 +1,4 @@
-use xander_runtime::{identity, register};
+use xander_runtime::register;
 
 use crate::engine::game::stats::proficiency::{
     ArchivedProficiencyApplicationBase, ProficiencyApplication, ProficiencyApplicationBase,
@@ -66,8 +66,7 @@ skills!(
 impl ProficiencyApplication for Skill {}
 impl ArchivedProficiencyApplicationBase for ArchivedSkill {}
 
-identity!(Skill: dyn ProficiencyApplicationBase, "SKILL");
-register!(Skill: dyn ProficiencyApplicationBase, register(Archive, Deserialize));
+register!(Skill: dyn ProficiencyApplicationBase, register(Identity("SKILL"), Archive, Deserialize));
 
 pub mod profs {
     use xander_runtime::always_alive;
@@ -85,8 +84,7 @@ pub mod profs {
 
     always_alive!(SkillProficiency);
 
-    identity!(SkillProficiency: dyn ProficiencyBase, "SKILL");
-    register!(SkillProficiency: dyn ProficiencyBase, register(Archive, Deserialize, Lived));
+    register!(SkillProficiency: dyn ProficiencyBase, register(Identity("SKILL"), Archive, Deserialize, Lived));
 
     impl ArchivedProficiencyBase for ArchivedSkillProficiency {}
 

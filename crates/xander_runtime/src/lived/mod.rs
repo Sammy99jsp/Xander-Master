@@ -11,19 +11,28 @@ use std::{
     rc::{Rc, Weak},
 };
 
-pub trait LivedIdentity: Lived {
-    #[doc(hidden)]
-    fn full_id(&self) -> FullId;
-}
+use dynx::{
+    Identity,
+    dynx::{DynSerializeUnsized, Single, Singleton},
+    registry::{
+        Registered,
+        identity::{FullId, IdentityFullBase},
+    },
+};
+
+use crate::{DynWeak, lived::archiving::Living};
 
 pub trait Lived {
     fn is_alive(&self) -> bool;
 }
 
-pub trait LivedAndSerializable: LivedIdentity + for<'a> DynSerializeUnsized<'a> {}
+pub trait LivedSerializable:
+    Lived + IdentityFullBase + for<'a> DynSerializeUnsized<'a> + Registered<Living>
+{
+}
 
-impl<T> LivedAndSerializable for T where
-    T: Lived + LivedIdentity + for<'a> DynSerializeUnsized<'a> + ?Sized
+impl<T> LivedSerializable for T where
+    T: Lived + IdentityFullBase + Registered<Living> + for<'a> DynSerializeUnsized<'a> + ?Sized
 {
 }
 
@@ -36,15 +45,6 @@ where
     }
 }
 
-impl<L> LivedIdentity for Rc<L>
-where
-    L: LivedIdentity + ?Sized + 'static,
-{
-    fn full_id(&self) -> FullId {
-        L::full_id(self)
-    }
-}
-
 impl<L> Lived for Box<L>
 where
     L: Lived + ?Sized,
@@ -54,12 +54,9 @@ where
     }
 }
 
-impl<L> LivedIdentity for Box<L>
-where
-    L: LivedIdentity + ?Sized,
-{
-    fn full_id(&self) -> FullId {
-        L::full_id(self)
+impl Lived for ! {
+    fn is_alive(&self) -> bool {
+        unreachable!()
     }
 }
 
@@ -73,16 +70,6 @@ where
     }
 }
 
-/// [Weak<L>] is alive if there are still strong references, and `<L>` itself is still alive.
-impl<L> LivedIdentity for Weak<L>
-where
-    L: LivedIdentity + ?Sized + 'static,
-{
-    fn full_id(&self) -> FullId {
-        self.upgrade().map(|l| l.full_id()).unwrap_or(NONE_ID)
-    }
-}
-
 /// [DynWeak<L>] is alive if there are still strong references, and `<L>` itself is still alive.
 impl<L> Lived for DynWeak<L>
 where
@@ -92,20 +79,6 @@ where
         self.upgrade().as_ref().is_some_and(Lived::is_alive)
     }
 }
-/// [Weak<L>] is alive if there are still strong references, and `<L>` itself is still alive.
-impl<L> LivedIdentity for DynWeak<L>
-where
-    L: LivedIdentity + ?Sized + 'static,
-{
-    fn full_id(&self) -> FullId {
-        self.upgrade().map(|l| l.full_id()).unwrap_or(NONE_ID)
-    }
-}
-
-const NONE_ID: FullId = FullId {
-    namespace_id: "LIVED",
-    local_id: "NONE",
-};
 
 #[repr(transparent)]
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -142,12 +115,12 @@ where
     }
 }
 
-impl<L> LivedIdentity for OptionalDependency<L>
+impl<I> IdentityFullBase for OptionalDependency<I>
 where
-    L: LivedIdentity + 'static,
+    I: Identity,
 {
     fn full_id(&self) -> FullId {
-        self.0.as_ref().map(|l| l.full_id()).unwrap_or(NONE_ID)
+        FullId::new::<I>()
     }
 }
 
@@ -157,18 +130,6 @@ where
 {
     fn is_alive(&self) -> bool {
         <Tr as Lived>::is_alive(self)
-    }
-}
-
-impl<Tr> LivedIdentity for Single<Tr>
-where
-    Tr: Singleton + Lived + ?Sized,
-{
-    fn full_id(&self) -> FullId {
-        FullId {
-            namespace_id: Tr::Namespace::ID,
-            local_id: self.local_id(),
-        }
     }
 }
 
@@ -210,25 +171,33 @@ macro_rules! dependently_alive {
 }
 
 pub use always_alive;
-use bytecheck::CheckBytes;
 pub use dependently_alive;
 
-use dynx::{
-    Identity, IntoNamespace, Namespace,
-    dynx::{DynCheckBytes, DynDeserializer, DynSerializeUnsized, Single, Singleton, utils},
-    registry::{
-        self, ArchivedLocalId, Archiving, Deserializing, REGISTRY, Record, Registered,
-        RegistryPlugin,
-    },
-};
-use rkyv::{
-    ArchiveUnsized, DeserializeUnsized, ptr_meta,
-    rancor::Fallible,
-    ser::{Allocator, Sharing, Writer},
-    traits::ArchivePointee,
-};
+#[doc(hidden)]
+pub use crate::register_lived;
 
-use crate::{DynWeak, dynx::FullId};
+/// # Lived
+#[doc(hidden)]
+#[macro_export]
+macro_rules! register_lived {
+    (@inner @<$($g: ident),*> () $this: path) => {};
+    (@inner @<$($g: ident),*> (@) $this: path) => {
+        unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::dynx::registry::Deserializing> for rkyv::Archived<$this> {}
+        unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::dynx::registry::Archiving> for rkyv::Archived<$this> {}
+    };
+    (@<$($g: ident),*> ($($tt: tt)?) $this: path $(: $_tr: ty)?) => {
+        impl<$($g),*> $crate::lived::archiving::ArchivedLived for ::rkyv::Archived<$this> {}
+
+        unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::lived::archiving::Living> for $this {}
+        unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::lived::archiving::LivedDeserializing> for rkyv::Archived<$this> {}
+
+        $crate::register_lived!(@inner @<$($g),*> ($($tt)?) $this);
+
+        ::inventory::submit! {
+            $crate::lived::archiving::Living::new::<$this>()
+        }
+    };
+}
 
 pub mod prelude {
     pub use super::{Lived, OptionalDependency, always_alive, dependently_alive};
@@ -237,175 +206,190 @@ pub mod prelude {
 
 // Archiving
 
-#[doc(hidden)]
-pub struct NS;
+pub mod archiving {
+    use super::LivedSerializable;
+    use bytecheck::CheckBytes;
+    use dynx::{
+        IntoNamespace, Namespace,
+        dynx::{DynCheckBytes, DynDeserializer, utils},
+        registry::{
+            self, ArchivedLocalId, Archiving, Deserializing, REGISTRY, Record, Registered,
+            RegistryPlugin,
+            identity::{FullId, IdentityFull},
+        },
+    };
+    use rkyv::{
+        ArchiveUnsized, DeserializeUnsized, ptr_meta,
+        rancor::Fallible,
+        ser::{Allocator, Sharing, Writer},
+        traits::ArchivePointee,
+    };
 
-impl Namespace for NS {
-    const ID: &'static str = "LIVED";
-}
+    #[doc(hidden)]
+    pub struct NS;
 
-impl IntoNamespace for dyn LivedAndSerializable {
-    type Namespace = NS;
-}
+    impl Namespace for NS {
+        const ID: &'static str = "LIVED";
+    }
 
-pub struct Living {
-    lived_impl: ptr_meta::DynMetadata<dyn ArchivedLived>,
-    deserializing: Deserializing,
-    full_id: FullId,
-    archiving: Archiving,
-}
+    impl IntoNamespace for dyn LivedSerializable {
+        type Namespace = NS;
+    }
 
-#[doc(hidden)]
-pub struct LivedDeserializing {}
+    pub struct Living {
+        lived_impl: ptr_meta::DynMetadata<dyn ArchivedLived>,
+        deserializing: Deserializing,
+        full_id: FullId,
+        archiving: Archiving,
+    }
 
-impl Living {
-    pub const fn new<T>(full_id: FullId) -> Self
-    where
-        T: LivedAndSerializable + rkyv::Archive + 'static,
-        <T as rkyv::Archive>::Archived:
-            ArchivedLived + rkyv::DeserializeUnsized<T, dyn DynDeserializer>,
-    {
-        Self {
-            lived_impl: {
-                let (_, metadata) =
-                    ptr_meta::to_raw_parts(std::ptr::dangling::<<T as rkyv::Archive>::Archived>()
-                        as *const dyn ArchivedLived);
-                metadata
-            },
-            full_id,
-            archiving: Archiving::new::<T, dyn LivedAndSerializable>(),
-            deserializing: Deserializing::new::<T, dyn LivedAndSerializable>(),
+    #[doc(hidden)]
+    pub struct LivedDeserializing {}
+
+    impl Living {
+        pub const fn new<T>() -> Self
+        where
+            T: LivedSerializable + rkyv::Archive + IdentityFull + 'static,
+            <T as rkyv::Archive>::Archived:
+                ArchivedLived + rkyv::DeserializeUnsized<T, dyn DynDeserializer>,
+        {
+            const {
+                Self {
+                    lived_impl: {
+                        let (_, metadata) = ptr_meta::to_raw_parts(std::ptr::dangling::<
+                            <T as rkyv::Archive>::Archived,
+                        >()
+                            as *const dyn ArchivedLived);
+                        metadata
+                    },
+                    full_id: <T as IdentityFull>::FULL_ID,
+                    archiving: Archiving::new::<T, dyn LivedSerializable>(),
+                    deserializing: Deserializing::new::<T, dyn LivedSerializable>(),
+                }
+            }
         }
     }
 
-    pub const fn new_auto<T>() -> Self
-    where
-        T: LivedAndSerializable + rkyv::Archive + Identity + 'static,
-        <T as rkyv::Archive>::Archived:
-            ArchivedLived + rkyv::DeserializeUnsized<T, dyn DynDeserializer>,
+    inventory::collect!(Living);
+
+    inventory::submit! {
+        RegistryPlugin(|registry| {
+            for record in inventory::iter::<Living> {
+                // Insert the custom metadata.
+                let full_id_hash =  record.full_id.hash();
+                let registered = registry.metadata_entry(registry::hash(NS::ID), full_id_hash, || { Record { namespace_id: NS::ID, local_id: record.full_id.local_id, payload: ()}});
+
+                registered.payload.extra.insert(NS::ID, Box::new(record.lived_impl));
+                registered.payload.archiving.replace(record.archiving);
+                registered.payload.deserializing.replace(record.deserializing);
+
+                *registry.archived_metadata_entry::<dyn LivedSerializable>(record.lived_impl) = full_id_hash;
+
+            }
+        })
+    }
+
+    pub trait ArchivedLived:
+        rkyv::Portable
+        + Registered<LivedDeserializing>
+        + Registered<Archiving>
+        + Registered<Deserializing>
+        + for<'a> DynCheckBytes<'a>
     {
-        const { Self::new::<T>(FullId::new::<T>()) }
     }
-}
 
-inventory::collect!(Living);
+    impl<'a> ArchiveUnsized for dyn LivedSerializable + 'a {
+        type Archived = dyn ArchivedLived + 'a;
 
-inventory::submit! {
-    RegistryPlugin(|registry| {
-        for record in inventory::iter::<Living> {
-            // Insert the custom metadata.
-            let full_id_hash = record.full_id.hash();
-            let registered = registry.metadata_entry(registry::hash(NS::ID), full_id_hash, || { Record { namespace_id: NS::ID, local_id: record.full_id.local_id, payload: ()}});
-            registered.payload.extra.insert(NS::ID, Box::new(record.lived_impl));
-            registered.payload.archiving.replace(record.archiving);
-            registered.payload.deserializing.replace(record.deserializing);
-
-            *registry.archived_metadata_entry::<dyn LivedAndSerializable>(record.lived_impl) = full_id_hash;
-
+        fn archived_metadata(&self) -> rkyv::ArchivedMetadata<Self> {
+            ArchivedLocalId::new_raw(self.full_id().hash())
         }
-    })
-}
-
-pub trait ArchivedLived:
-    rkyv::Portable
-    + Registered<LivedDeserializing>
-    + Registered<Archiving>
-    + Registered<Deserializing>
-    + for<'a> DynCheckBytes<'a>
-{
-}
-
-impl<'a> ArchiveUnsized for dyn LivedAndSerializable + 'a {
-    type Archived = dyn ArchivedLived + 'a;
-
-    fn archived_metadata(&self) -> rkyv::ArchivedMetadata<Self> {
-        ArchivedLocalId::new_raw(self.full_id().hash())
-    }
-}
-
-impl<S> rkyv::SerializeUnsized<S> for dyn LivedAndSerializable + '_
-where
-    S: Fallible + Writer + Sharing + Allocator + ?Sized,
-    S::Error: core::error::Error + Send + Sync + 'static,
-{
-    fn serialize_unsized(&self, serializer: &mut S) -> Result<usize, S::Error> {
-        unsafe { utils::serialize::serialize_unsized(self, serializer) }
-    }
-}
-
-impl ArchivePointee for dyn ArchivedLived + '_ {
-    type ArchivedMetadata = ArchivedLocalId;
-
-    fn pointer_metadata(
-        archived: &Self::ArchivedMetadata,
-    ) -> <Self as ptr_meta::Pointee>::Metadata {
-        let local_hash = archived.as_u64();
-
-        let meta = REGISTRY
-            .lookup_by_hash(registry::hash(NS::ID), local_hash)
-            .unwrap();
-
-        *meta
-            .extra
-            .get(NS::ID)
-            .unwrap()
-            .as_ref()
-            .downcast_ref::<ptr_meta::DynMetadata<dyn ArchivedLived>>()
-            .unwrap()
-    }
-}
-
-unsafe impl ptr_meta::Pointee for dyn ArchivedLived + '_ {
-    type Metadata = ptr_meta::DynMetadata<Self>;
-}
-
-unsafe impl ptr_meta::Pointee for dyn LivedAndSerializable + '_ {
-    type Metadata = ptr_meta::DynMetadata<Self>;
-}
-
-impl rkyv::traits::LayoutRaw for dyn LivedAndSerializable + '_ {
-    fn layout_raw(
-        metadata: <Self as ptr_meta::Pointee>::Metadata,
-    ) -> Result<std::alloc::Layout, std::alloc::LayoutError> {
-        Ok(metadata.layout())
-    }
-}
-
-impl<D> DeserializeUnsized<dyn LivedAndSerializable, D> for dyn ArchivedLived
-where
-    D: Fallible + ?Sized,
-    D::Error: 'static,
-{
-    unsafe fn deserialize_unsized(
-        &self,
-        deserializer: &mut D,
-        out: *mut dyn LivedAndSerializable,
-    ) -> Result<(), <D as Fallible>::Error> {
-        unsafe { dynx::dynx::utils::deserialize::deserialize_unsized(self, deserializer, out) }
     }
 
-    fn deserialize_metadata(&self) -> <dyn LivedAndSerializable as ptr_meta::Pointee>::Metadata {
-        dynx::dynx::utils::deserialize::deserialize_metadata::<dyn LivedAndSerializable>(self)
+    impl<S> rkyv::SerializeUnsized<S> for dyn LivedSerializable + '_
+    where
+        S: Fallible + Writer + Sharing + Allocator + ?Sized,
+        S::Error: core::error::Error + Send + Sync + 'static,
+    {
+        fn serialize_unsized(&self, serializer: &mut S) -> Result<usize, S::Error> {
+            unsafe { utils::serialize::serialize_unsized(self, serializer) }
+        }
     }
-}
 
-unsafe impl<C> CheckBytes<C> for dyn ArchivedLived + '_
-where
-    C: Fallible + ?Sized,
-    C::Error: core::error::Error + Send + Sync + 'static,
-{
-    unsafe fn check_bytes(
-        value: *const Self,
-        context: &mut C,
-    ) -> Result<(), <C as Fallible>::Error> {
-        unsafe { dynx::dynx::utils::check_bytes::check_bytes(value, context) }
+    impl ArchivePointee for dyn ArchivedLived + '_ {
+        type ArchivedMetadata = ArchivedLocalId;
+
+        fn pointer_metadata(
+            archived: &Self::ArchivedMetadata,
+        ) -> <Self as ptr_meta::Pointee>::Metadata {
+            let local_hash = archived.as_hash();
+
+            let meta = REGISTRY
+                .lookup_by_hash(registry::hash(NS::ID), local_hash)
+                .unwrap();
+
+            *meta
+                .extra
+                .get(NS::ID)
+                .unwrap()
+                .as_ref()
+                .downcast_ref::<ptr_meta::DynMetadata<dyn ArchivedLived>>()
+                .unwrap()
+        }
     }
-}
 
-impl rkyv::traits::LayoutRaw for dyn ArchivedLived + '_ {
-    fn layout_raw(
-        metadata: <Self as ptr_meta::Pointee>::Metadata,
-    ) -> Result<std::alloc::Layout, std::alloc::LayoutError> {
-        Ok(metadata.layout())
+    unsafe impl ptr_meta::Pointee for dyn ArchivedLived + '_ {
+        type Metadata = ptr_meta::DynMetadata<Self>;
+    }
+
+    unsafe impl ptr_meta::Pointee for dyn LivedSerializable + '_ {
+        type Metadata = ptr_meta::DynMetadata<Self>;
+    }
+
+    impl rkyv::traits::LayoutRaw for dyn LivedSerializable + '_ {
+        fn layout_raw(
+            metadata: <Self as ptr_meta::Pointee>::Metadata,
+        ) -> Result<std::alloc::Layout, std::alloc::LayoutError> {
+            Ok(metadata.layout())
+        }
+    }
+
+    impl<D> DeserializeUnsized<dyn LivedSerializable, D> for dyn ArchivedLived
+    where
+        D: Fallible + ?Sized,
+        D::Error: 'static,
+    {
+        unsafe fn deserialize_unsized(
+            &self,
+            deserializer: &mut D,
+            out: *mut dyn LivedSerializable,
+        ) -> Result<(), <D as Fallible>::Error> {
+            unsafe { dynx::dynx::utils::deserialize::deserialize_unsized(self, deserializer, out) }
+        }
+
+        fn deserialize_metadata(&self) -> <dyn LivedSerializable as ptr_meta::Pointee>::Metadata {
+            dynx::dynx::utils::deserialize::deserialize_metadata::<dyn LivedSerializable>(self)
+        }
+    }
+
+    unsafe impl<C> CheckBytes<C> for dyn ArchivedLived + '_
+    where
+        C: Fallible + ?Sized,
+        C::Error: core::error::Error + Send + Sync + 'static,
+    {
+        unsafe fn check_bytes(
+            value: *const Self,
+            context: &mut C,
+        ) -> Result<(), <C as Fallible>::Error> {
+            unsafe { dynx::dynx::utils::check_bytes::check_bytes(value, context) }
+        }
+    }
+
+    impl rkyv::traits::LayoutRaw for dyn ArchivedLived + '_ {
+        fn layout_raw(
+            metadata: <Self as ptr_meta::Pointee>::Metadata,
+        ) -> Result<std::alloc::Layout, std::alloc::LayoutError> {
+            Ok(metadata.layout())
+        }
     }
 }

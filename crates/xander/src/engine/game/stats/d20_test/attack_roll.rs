@@ -98,7 +98,7 @@ pub mod events {
 
     use xander_runtime::{
         flow::{Event, event::EventBase},
-        identity,
+        register,
     };
 
     use super::*;
@@ -114,7 +114,7 @@ pub mod events {
         pub attacker: Weak<Creature>,
     }
 
-    identity!(PreAttackRollEvent: dyn EventBase<Game>, "ATTACK_ROLL::PRE_ROLL");
+    register!(PreAttackRollEvent: dyn EventBase<Game>, register(Identity("ATTACK_ROLL::PRE_ROLL")));
     impl Event<Game> for PreAttackRollEvent {
         type Resolved = PreRollPayload<AttackRoll>;
 
@@ -156,7 +156,7 @@ pub mod events {
         pub attacker: Weak<Creature>,
     }
 
-    identity!(PreAttackRollResultEvent: dyn EventBase<Game>, "ATTACK_ROLL::PRE_RESULT");
+    register!(PreAttackRollResultEvent: dyn EventBase<Game>, register(Identity("ATTACK_ROLL::PRE_RESULT")));
     impl Event<Game> for PreAttackRollResultEvent {
         type Resolved = PreResultPayload<AttackRoll>;
 
@@ -193,7 +193,7 @@ pub mod events {
         pub attacker: Weak<Creature>,
     }
 
-    identity!(PostAttackRollResultEvent: dyn EventBase<Game>, "ATTACK_ROLL::POST_RESULT");
+    register!(PostAttackRollResultEvent: dyn EventBase<Game>, register(Identity("ATTACK_ROLL::POST_RESULT")));
     impl Event<Game> for PostAttackRollResultEvent {
         type Resolved = Self;
 

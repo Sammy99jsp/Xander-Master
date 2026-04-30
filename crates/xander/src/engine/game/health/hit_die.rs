@@ -9,7 +9,7 @@ impl HitDie {
     pub fn new(me: Me) -> Self {
         Self { me }
     }
-    
+
     pub fn die(&self) -> d20::DExpr {
         let me = &*self.me;
         match &me.kind {
@@ -27,9 +27,10 @@ impl HitDie {
 }
 
 pub mod ui {
-    use xander_runtime::ui;
+    use xander_runtime::{register, ui};
 
     use crate::engine::game::health::hit_die::HitDie;
 
     impl ui::Ui for HitDie {}
+    register!(HitDie, register(Identity("HIT_DIE")));
 }

@@ -8,6 +8,7 @@ pub mod level;
 pub mod range;
 pub mod school;
 pub mod targeting;
+pub mod aoe;
 
 #[Namespace("SPELL" @ NS, derive(Singleton))]
 pub trait Spell: ui::Ui + Cast + std::fmt::Debug + Send + Sync {

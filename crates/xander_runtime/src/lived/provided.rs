@@ -344,7 +344,9 @@ mod tests {
 
         always_alive!(BaseAC);
 
-        register!(BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize, Lived));
+        register!(@<A, B> BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize));
+        // register!(BaseAC: dyn ProvisoBase<u32>, register(Archive(a), Deserialize(a)));
+        // register!(BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize, Lived));
         impl ArchivedProvisoBase<u32> for ArchivedBaseAC {}
 
         impl Identity for BaseAC {

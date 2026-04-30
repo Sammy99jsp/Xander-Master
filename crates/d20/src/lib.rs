@@ -5,6 +5,7 @@
 
 #![feature(never_type)]
 
+pub mod dynx;
 pub mod eval;
 pub mod parser;
 pub mod provider;
@@ -17,6 +18,7 @@ pub use provider::DiceRoller;
 
 #[cfg(feature = "rand")]
 pub use provider::local_rng::LocalRng;
+use xander_runtime::dynx::rkyv;
 
 pub mod reexport {
     #[cfg(feature = "rand")]
@@ -24,49 +26,135 @@ pub mod reexport {
 }
 
 /// A dice expression.
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[rustfmt::skip]
+#[derive(Debug, Clone, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(
+    crate = xander_runtime::dynx::rkyv,
+    serialize_bounds(__S: rkyv::ser::Writer + rkyv::ser::Allocator),
+    deserialize_bounds(__D::Error: rkyv::rancor::Source),
+    bytecheck(bounds(__C: rkyv::validation::ArchiveContext)),
+)]
 pub enum DExpr {
     Literal(Literal),
     Dice(Dice),
-    UnaryOperation(UnaryOperator, Box<Self>),
-    Set(Vec<Self>),
-    SetOperation(Box<Self>, SetOp),
-    BinaryOperation(Box<Self>, BinaryOperator, Box<Self>),
-    Labeled(Box<Self>, Label),
+    UnaryOperation(
+        UnaryOperator, 
+        #[rkyv(omit_bounds)] 
+        Box<Self>
+    ),
+    Set(#[rkyv(omit_bounds)] Vec<Self>),
+    SetOperation(
+        #[rkyv(omit_bounds)] 
+        Box<Self>, 
+        SetOp
+    ),
+    BinaryOperation(
+        #[rkyv(omit_bounds)]
+        Box<Self>, 
+        BinaryOperator, 
+        #[rkyv(omit_bounds)]
+        Box<Self>
+    ),
+    Labeled(
+        #[rkyv(with = crate::dynx::Unlabeled)]
+        #[rkyv(omit_bounds)]
+        Labeled<Self>
+    ),
 }
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct Labeled<T>(pub Box<T>, pub Label);
 
 /// A semantic label for a sub-expression.
 ///
 /// Labels are ignored for [std::cmp::PartialEq] (`==`).
 #[derive(Debug, Clone)]
-pub struct Label(pub Rc<dyn xander_runtime::ui::Ui>);
+pub struct Label(pub Option<Rc<dyn xander_runtime::ui::Ui>>);
 
 /// A set of die.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct Dice {
     pub qty: Option<Int>,
     pub sides: Int,
 }
 
 /// A literal number.
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(
+    Debug, Clone, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum Literal {
     Int(Int),
     Decimal(Decimal),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct Int(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct Decimal(pub f64);
 
 /// These operations can be performed on dice and sets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct SetOp(pub SetOperator, pub Selection);
 
 /// [SetOperator]s are always followed by a [Selector], and operate on the items in the set that match the selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum SetOperator {
     /// Keeps all matched values.
     Keep,
@@ -86,11 +174,37 @@ pub enum SetOperator {
     Maximum,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub struct Selection(pub Selector, pub Int);
 
 /// [Selector]s select from the remaining kept values in a set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum Selector {
     /// All values in this set that are literally this value.
     Literal,
@@ -104,7 +218,20 @@ pub enum Selector {
     LessThan,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum UnaryOperator {
     /// Does nothing.
     Positive,
@@ -112,7 +239,20 @@ pub enum UnaryOperator {
     Negative,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(crate = xander_runtime::dynx::rkyv)]
 pub enum BinaryOperator {
     /// Multiplication
     Mul,

@@ -14,7 +14,7 @@ pub struct ArchivedLocalId(ArchivedU32);
 unsafe impl NoUndef for ArchivedLocalId {}
 
 impl ArchivedLocalId {
-    pub fn as_u64(self) -> HashTy {
+    pub fn as_hash(self) -> HashTy {
         self.0.to_native()
     }
 

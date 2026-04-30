@@ -1,3 +1,4 @@
+pub mod identity;
 pub mod metadata;
 
 use rapidhash::v3::{rapidhash_v3, rapidhash_v3_file};
@@ -16,30 +17,14 @@ pub use metadata::{
 
 use metadata::{Meta, Metadata};
 
+pub use identity::{Identity, IdentityBase};
+
 pub trait Namespace {
     const ID: &'static str;
 }
 
 pub trait IntoNamespace {
     type Namespace: Namespace;
-}
-
-pub trait Identity: IdentityBase<<Self::Parent as IntoNamespace>::Namespace> {
-    type Parent: IntoNamespace + ?Sized;
-    const LOCAL_ID: &'static str;
-}
-
-pub trait IdentityBase<NS>
-where
-    NS: Namespace + ?Sized,
-{
-    fn local_id(&self) -> &'static str;
-}
-
-impl<I: Identity> IdentityBase<<I::Parent as IntoNamespace>::Namespace> for I {
-    fn local_id(&self) -> &'static str {
-        I::LOCAL_ID
-    }
 }
 
 pub type HashTy = u32;
@@ -124,6 +109,10 @@ impl Registry {
         (namespace_hash, local_hash)
     }
 
+    pub fn namespace(&self, name: &str) -> Option<&HashMap<HashTy, Record<Meta>>> {
+        self.metadata.get(&hash(name))
+    }
+
     fn intern_and_hash(
         &mut self,
         namespace_id: &'static str,
@@ -142,7 +131,7 @@ impl Registry {
             &self
                 .metadata
                 .get(&hash(Tr::Namespace::ID))?
-                .get(&local.as_u64())?
+                .get(&local.as_hash())?
                 .payload,
         )
     }

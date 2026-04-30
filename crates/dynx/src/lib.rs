@@ -1,5 +1,5 @@
 #![allow(internal_features)]
-#![feature(unsize, ptr_metadata, core_intrinsics, const_cmp, const_trait_impl)]
+#![feature(unsize, ptr_metadata, core_intrinsics, const_cmp, const_trait_impl, never_type)]
 
 pub mod dynx;
 pub mod macros;

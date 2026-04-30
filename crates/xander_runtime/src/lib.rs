@@ -9,9 +9,9 @@
 pub mod dynx;
 pub mod flow;
 pub mod lived;
-pub mod ui;
 #[doc(hidden)]
-pub mod __macros;
+pub mod macros;
+pub mod ui;
 
 pub use futures;
 
@@ -23,85 +23,48 @@ pub use dynx::weak::DynWeak;
 macro_rules! register {
     (@autocomplete $register: ident $($($v: ident),+)?) => {
         const _: () = {
-            const _: $crate::__macros::__register__autocomplete::AutocompleteFn = $crate::__macros::__register__autocomplete::$register;
+            const _: $crate::macros::AutocompleteFn = $crate::macros::$register;
             $(
                 #[allow(unused_imports)]
-                use $crate::__macros::__register__autocomplete::{$($v),*};
+                use $crate::macros::*;
+
+                $(
+                    #[allow(path_statements)]
+                    const _: () = const {$v;};
+                )*
             )?
         };
     };
-    (@inner @inner Lived $p: path) => {
-        unsafe impl $crate::dynx::registry::Registered<::dynx::registry::Deserializing> for rkyv::Archived<$p> {}
-        unsafe impl $crate::dynx::registry::Registered<::dynx::registry::Archiving> for rkyv::Archived<$p> {}
+    // register!(@autocomplete $register $($v),+);
+    ($p: path $(:$tr: ty)?, $register: ident) => {
+        register!(@autocomplete $register);
+        compile_error!("Ensure you call register with parentheses `register!(..., register())`")
     };
-    (@inner @inner Lived $p: path : $_tr: ty) => {};
-    (@inner Lived $p: path $(: $_tr: ty)?) => {
-        impl $crate::lived::ArchivedLived for ::rkyv::Archived<$p> {}
 
-        unsafe impl $crate::dynx::registry::Registered<$crate::lived::Living> for $p {}
-        unsafe impl $crate::dynx::registry::Registered<$crate::lived::LivedDeserializing> for rkyv::Archived<$p> {}
-        register!(@inner @inner Lived $p $(: $_tr)?);
-
-        impl $crate::lived::LivedIdentity for $p {
-            fn full_id(&self) -> $crate::dynx::FullId {
-                $crate::dynx::FullId::new::<$p>()
-            }
-        }
-
-        ::inventory::submit! {
-            $crate::lived::Living::new_auto::<$p>()
-        }
+    ($p: path $(:$tr: ty)?, $register: ident()) => {
+        register!(@autocomplete $register);
     };
-    (@inner Lived($local_id: expr) $p: path $(: $_tr: ty)?) => {
-        impl $crate::lived::ArchivedLived for ::rkyv::Archived<$p> {}
 
-        unsafe impl $crate::dynx::registry::Registered<$crate::lived::Living> for $p {}
-        unsafe impl $crate::dynx::registry::Registered<$crate::lived::LivedDeserializing> for rkyv::Archived<$p> {}
-
-        register!(@inner @inner Lived $p $(: $_tr)?);
-
-        impl $crate::lived::LivedIdentity for $p {
-            fn full_id(&self) -> $crate::dynx::FullId {
-                $crate::dynx::FullId::mononym($local_id)
-            }
-        }
-
-        ::inventory::submit! {
-            $crate::lived::Living::new::<$p>($crate::dynx::FullId::mononym($local_id))
-        }
+    (@inner @<$($g: ident),*> ($p: path $(:$tr: ty)?) ($v: ident) (($($extra: tt)*))) => {
+        $crate::macros::$v!(@<$($g),*> ($($extra)*) $p $(:$tr)?);
     };
-    (@inner Archive $p: path) => {
-        compile_error!("Cannot use register(Archive) without parent trait!");
-    };
-    (@inner Deserialize $p: path) => {
-        compile_error!("Cannot use register(Deserialize) without parent trait!");
-    };
-    (@inner $v: ident $p: path: $tr: ty) => {
-        const _: () = {
-            #[allow(unused_imports)]
-            use $crate::__macros::__register__autocomplete::{Archive, Deserialize, Singleton, Lived};
+    (@inner @<$($g: ident),*> ($p: path $(:$tr: ty)?) ($v: ident, $($vs: ident),*) (($($extra: tt)*), $(($($extras: tt)*)),*)) => {
+        $crate::register!(
+            @inner @<$($g),*> ($p $(:$tr)?) ($v) (($($extra)*))
+        );
 
-            unsafe impl $crate::dynx::registry::Registered<$v>
-                for $crate::dynx::rkyv::Archived<$p>
-            {
-            }
+        $crate::register!(
+            @inner @<$($g),*> ($p $(:$tr)?) ($($vs),*) ($(($($extras)*)),*)
+        );
+    };
 
-            ::inventory::submit! {
-                $crate::dynx::registry::Record::new::<$p, $tr>({
+    ($(@<$($g: ident),*$(,)?>)? $p: path $(:$tr: ty)?, $register: ident ($($v: ident $(($($extra: tt)*))?),* $(,)?)) => {
+        $crate::register!(@autocomplete $register $($v),*);
 
-                    $v::new::<$p, $tr>()
-                })
-            }
-        };
+        $crate::register!( @inner
+            @<$($($g),*)?> ($p $(:$tr)?) ($($v),*) ($(($($($extra)*)?)),*)
+        );
+
     };
-    ($p: path, $register: ident $(($($v: ident $(($($tt: tt)*))?),+ $(,)?))?) => {
-        register!(@autocomplete $register $($($v),+)?);
-        $($(register!(@inner $v $(($($tt)*))? $p);)*)?
-    };
-    ($p: path: $tr: ty, $register: ident $(($($v: ident $(($($tt: tt)*))?),+ $(,)?))?) => {
-        $(
-            register!(@autocomplete $register $($v),+);
-        )?
-        $($(register!(@inner $v $(($($tt)*))? $p :$tr);)*)?
-    };
+
 }

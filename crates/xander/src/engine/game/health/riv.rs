@@ -8,7 +8,7 @@ use d20::ValTree;
 use dynx::{Namespace, dynx::Single};
 use xander_runtime::{
     DynWeak, Lived, dependently_alive,
-    lived::{LivedAndSerializable, LivedList, OptionalDependency},
+    lived::{LivedList, LivedSerializable, OptionalDependency},
     register,
 };
 
@@ -31,7 +31,7 @@ dependently_alive!(Vulnerability, 0);
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct DamageEffect {
-    pub dep: OptionalDependency<DynWeak<dyn LivedAndSerializable>>,
+    pub dep: OptionalDependency<DynWeak<dyn LivedSerializable>>,
     pub to: DamageFilter,
 }
 dependently_alive!(DamageEffect, dep);
@@ -44,7 +44,7 @@ pub enum DamageFilter {
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Immunity {
-    pub dep: OptionalDependency<DynWeak<dyn LivedAndSerializable>>,
+    pub dep: OptionalDependency<DynWeak<dyn LivedSerializable>>,
     pub to: ImmunityTarget,
 }
 dependently_alive!(Immunity, dep);
@@ -106,21 +106,21 @@ pub trait DamageEffectTrait: xander_runtime::ui::Ui {
 fn has_label_recur<Op: DamageEffectTrait>(mut damage: &ValTree) -> bool {
     loop {
         println!("{damage:?}");
-        let ValTree::Labeled(
+        let ValTree::Labeled(d20::Labeled(
             box ValTree::BinaryOperation(
                 lhs,
                 op,
                 box ValTree::Literal(d20::Literal::Int(d20::Int(rhs))),
             ),
             label,
-        ) = damage
+        )) = damage
         else {
             return false;
         };
 
         println!("{:?}", label.0);
 
-        if label.0.is::<Op>() && *op == Op::OP && *rhs == Op::RHS {
+        if label.0.as_ref().is_some_and(|l| l.is::<Op>()) && *op == Op::OP && *rhs == Op::RHS {
             return true;
         }
 
@@ -204,10 +204,16 @@ pub mod ui {
     impl ui::Ui for Immunity {}
 }
 
-register!(Resistance, register(Lived("RESISTANCE")));
-register!(Immunity, register(Lived("IMMUNITY")));
-register!(Vulnerability, register(Lived("VULNERABILITY")));
-register!(DamageEffect, register(Lived("DAMAGE_EFFECT")));
+register!(Resistance, register(Identity("HEALTH::RESISTANCE"), Lived(@)));
+register!(
+    Vulnerability,
+    register(Identity("HEALTH::VULNERABILITY"), Lived(@))
+);
+register!(Immunity, register(Identity("HEALTH::IMMUNITY"), Lived(@)));
+register!(
+    DamageEffect,
+    register(Identity("HEALTH::DAMAGE_EFFECT"), Lived(@))
+);
 
 #[cfg(test)]
 mod tests {

@@ -70,7 +70,7 @@ pub mod profs {
         pub ability: Ability,
     }
 
-    identity!(SaveProficiency: dyn ProficiencyBase, "SAVE");
+    register!(SaveProficiency: dyn ProficiencyBase, register(Identity("SAVE")));
     always_alive!(SaveProficiency);
 
     impl ArchivedProficiencyBase for rkyv::Archived<SaveProficiency> {}
@@ -121,7 +121,7 @@ pub mod decisions {
         roll_result: d20::ValTree,
     }
 
-    identity!(GMDecidesSaveResult: Decision, "SAVE::GM_DECIDES");
+    register!(GMDecidesSaveResult: Decision, register(Identity("SAVE::GM_DECIDES")));
     impl IntoDecision for GMDecidesSaveResult {
         type Response = super::SaveResult;
         type Kind = Selection;
@@ -153,6 +153,8 @@ pub mod decisions {
 pub mod events {
     use std::{future::ready, rc::Weak};
 
+    use xander_runtime::register;
+
     use crate::engine::game::{creature::Creature, stats::ability::AbilityModifier};
     use crate::prelude::event::*;
 
@@ -168,7 +170,7 @@ pub mod events {
         pub creature: Weak<Creature>,
     }
 
-    identity!(PreRollSaveEvent: dyn EventBase<Game>, "SAVE::PRE_ROLL");
+    register!(PreRollSaveEvent: dyn EventBase<Game>, register(Identity("SAVE::PRE_ROLL")));
     impl Event<Game> for PreRollSaveEvent {
         type Resolved = PreRollPayload<Save>;
 
@@ -210,7 +212,7 @@ pub mod events {
         pub creature: Weak<Creature>,
     }
 
-    identity!(PreResultSaveEvent: dyn EventBase<Game>, "SAVE::PRE_RESULT");
+    register!(PreResultSaveEvent: dyn EventBase<Game>, register(Identity("SAVE::PRE_RESULT")));
     impl Event<Game> for PreResultSaveEvent {
         type Resolved = PreResultPayload<Save>;
 
@@ -247,7 +249,7 @@ pub mod events {
         pub creature: Weak<Creature>,
     }
 
-    identity!(PostResultSaveEvent: dyn EventBase<Game>, "SAVE::POST_RESULT");
+    register!(PostResultSaveEvent: dyn EventBase<Game>, register(Identity("SAVE::POST_RESULT")));
     impl Event<Game> for PostResultSaveEvent {
         type Resolved = Self;
 

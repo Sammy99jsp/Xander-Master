@@ -1,14 +1,12 @@
 use std::{cell::Cell, num::NonZero};
 
-use xander_runtime::{
-    DynWeak, Lived, dynx::cells::InnerValue, lived::LivedAndSerializable, register,
-};
+use xander_runtime::{DynWeak, Lived, dynx::cells::InnerValue, lived::LivedSerializable, register};
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct TempHp {
     #[rkyv(with = InnerValue<super::HpValue>)]
     hp_left: Cell<super::HpValue>,
-    source: DynWeak<dyn LivedAndSerializable>,
+    source: DynWeak<dyn LivedSerializable>,
 }
 
 impl Lived for TempHp {
@@ -17,7 +15,7 @@ impl Lived for TempHp {
     }
 }
 
-register!(TempHp, register(Lived("TEMP_HP")));
+register!(TempHp, register(Identity("TEMP_HP"), Lived(@)));
 
 pub struct Discounted {
     pub discounted: NonZero<super::HpValue>,
@@ -50,7 +48,7 @@ mod tests {
     use rkyv::{from_bytes, rancor::Error, to_bytes};
     use xander_runtime::{
         DynWeak, always_alive,
-        lived::{LivedAndSerializable, cell::LivedCell},
+        lived::{LivedSerializable, cell::LivedCell},
         register,
     };
 
@@ -62,9 +60,9 @@ mod tests {
         pub struct Forever;
 
         always_alive!(Forever);
-        register!(Forever, register(Lived("FOREVER")));
+        register!(Forever, register(Identity("TEST::FOREVER"), Lived(@)));
 
-        let forever = Rc::new(Forever) as Rc<dyn LivedAndSerializable>;
+        let forever = Rc::new(Forever) as Rc<dyn LivedSerializable>;
 
         let cell = LivedCell::new(TempHp {
             hp_left: Cell::new(32),

@@ -1,16 +1,25 @@
-use std::rc::Rc;
+pub mod arena;
+pub mod turn;
+pub mod attack;
 
-use crate::engine::game::creature::Creature;
+use std::{cell::Cell, rc::Rc};
+
+use xander_runtime::dynx::cells::InnerValue;
+
+use crate::engine::game::{combat::arena::Position, creature::Creature};
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Combatant {
     pub creature: Rc<Creature>,
     pub initiative_score: i32,
+
+    #[rkyv(with = InnerValue<Position>)]
+    pub position: Cell<Position>,
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Combat {
-    initiative: Vec<Combatant>,
+    initiative: Vec<Rc<Combatant>>,
 }
 
 impl Default for Combat {
@@ -26,7 +35,8 @@ impl Combat {
         }
     }
 
-    pub async fn enroll(&self, combatant: Combatant) -> ! {
-        todo!("Sort out the whole decision rules we're going with here.")
+    pub async fn enroll(&mut self, combatant: Combatant) {
+        self.initiative.push(Rc::new(combatant));
+        self.initiative.sort_by_cached_key(|c| c.initiative_score);
     }
 }
