@@ -132,7 +132,6 @@ pub mod events {
     };
 
     use xander_runtime::{
-        always_alive,
         flow::event::{Event, EventBase, EventHandler, cancellable},
         register,
     };
@@ -166,10 +165,13 @@ pub mod events {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     pub struct OpportunityAttackHandler;
 
-    always_alive!(OpportunityAttackHandler);
+    register!(
+        OpportunityAttackHandler,
+        register(Identity("OPPORTUNITY_ATTACH_HANDLER"), Lived(@always))
+    );
 
     impl EventHandler<Game> for OpportunityAttackHandler {
         type Event = PreMoveEvent;

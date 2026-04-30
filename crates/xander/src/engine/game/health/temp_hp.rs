@@ -47,7 +47,7 @@ mod tests {
 
     use rkyv::{from_bytes, rancor::Error, to_bytes};
     use xander_runtime::{
-        DynWeak, always_alive,
+        DynWeak,
         lived::{LivedSerializable, cell::LivedCell},
         register,
     };
@@ -59,8 +59,7 @@ mod tests {
         #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
         pub struct Forever;
 
-        always_alive!(Forever);
-        register!(Forever, register(Identity("TEST::FOREVER"), Lived(@)));
+        register!(Forever, register(Identity("TEST::FOREVER"), Lived(@always)));
 
         let forever = Rc::new(Forever) as Rc<dyn LivedSerializable>;
 

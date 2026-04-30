@@ -30,7 +30,7 @@ macro_rules! register {
 
                 $(
                     #[allow(path_statements)]
-                    const _: () = const {$v;};
+                    const _: () = {$v;};
                 )*
             )?
         };

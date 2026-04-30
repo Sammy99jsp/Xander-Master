@@ -56,6 +56,10 @@ impl Creature {
     pub fn is_dead(&self) -> bool {
         self.stats.health.is_dead()
     }
+
+    pub fn me(self: &Rc<Self>) -> Me {
+        Me(Rc::downgrade(self))
+    }
 }
 
 pub mod ui {
@@ -71,7 +75,6 @@ pub mod provisos {
 
     use dynx::Identity;
     use xander_runtime::{
-        always_alive,
         lived::provided::{ArchivedProvisoBase, Proviso, ProvisoBase},
         register,
     };
@@ -84,8 +87,7 @@ pub mod provisos {
         pub me: Me,
     }
 
-    always_alive!(CreatureProficiencyBonus);
-    register!(CreatureProficiencyBonus: dyn ProvisoBase<ProficiencyBonus>, register(Archive, Deserialize, Lived));
+    register!(CreatureProficiencyBonus: dyn ProvisoBase<ProficiencyBonus>, register(Archive, Deserialize, Lived(always)));
 
     impl ArchivedProvisoBase<ProficiencyBonus> for rkyv::Archived<CreatureProficiencyBonus> {}
 

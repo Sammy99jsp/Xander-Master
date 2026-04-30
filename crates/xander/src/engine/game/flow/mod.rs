@@ -32,10 +32,9 @@ impl EventHandlers {
         let mut inner = self.inner.borrow_mut();
         inner
             .entry(<H::Event as Identity>::LOCAL_ID)
-            .and_modify(|list| {
-                list.get_mut().push(Rc::new(handler));
-            })
-            .or_default();
+            .or_default()
+            .get_mut()
+            .push(Rc::new(handler));
     }
 
     pub async fn handle<E>(&self, mut event: E) -> Outcome<Game, E>
@@ -55,6 +54,10 @@ impl EventHandlers {
 
         for handler in handlers {
             handler.handle(&mut event).await;
+
+            if event.is_cancelled() {
+                break;
+            }
         }
 
         event.finalize().await

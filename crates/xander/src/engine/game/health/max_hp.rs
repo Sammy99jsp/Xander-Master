@@ -60,8 +60,7 @@ pub mod provisos {
     #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     pub struct Set(pub(super) u32);
 
-    register!(Set: dyn ProvisoBase<u32>, register(Identity("SET_MAX_HP"), Archive, Deserialize, Lived));
-    always_alive!(Set);
+    register!(Set: dyn ProvisoBase<u32>, register(Identity("SET_MAX_HP"), Archive, Deserialize, Lived(always)));
 
     impl ArchivedProvisoBase<u32> for rkyv::Archived<Set> {}
 

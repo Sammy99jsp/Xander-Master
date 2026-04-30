@@ -284,152 +284,123 @@ pub mod ui {
     impl ui::Ui for super::CheckResult {}
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::{
-//         future::ready,
-//         rc::{Rc, Weak},
-//     };
+#[cfg(test)]
+mod tests {
+    use std::{future::ready, rc::Rc};
 
-//     use xander_runtime::{always_alive, flow::event::EventHandler, lived::provided::Provided, ui};
+    use xander_runtime::{
+        flow::{dispatcher::DispatchState, event::EventHandler, io::TestInterface},
+        register, ui,
+    };
 
-//     use crate::engine::game::{
-//         Dispatcher, Game,
-//         creature::{
-//             Creature, CreatureKind,
-//             monster::{Cr, Monster, provisos::MonsterProficiencyBonus},
-//             proficiencies::Proficiencies,
-//             stat_block::{self, AbilityModifiers, AbilityScores, StatBlock},
-//         },
-//         health::Health,
-//         stats::{
-//             ability::AbilityScore,
-//             d20_test::{Advantage, D20TestRoll, DC, check::Check},
-//             skill::{Skill, profs::SkillProficiency},
-//         },
-//     };
+    use crate::engine::game::{
+        Dispatcher, Game,
+        creature::{Me, test_creature},
+        stats::{
+            d20_test::{Advantage, D20TestRoll, DC, check::Check},
+            skill::{Skill, profs::SkillProficiency},
+        },
+    };
 
-//     #[derive(Debug, Clone)]
-//     struct Expertise {
-//         me: Weak<Creature>,
-//         skill: Skill,
-//     }
+    #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+    struct Expertise {
+        me: Me,
+        skill: Skill,
+    }
 
-//     always_alive!(Expertise);
-//     impl ui::Ui for Expertise {}
+    register!(Expertise, register(Identity("TEST::EXPERTISE"), Lived(@always)));
+    impl ui::Ui for Expertise {}
 
-//     impl EventHandler<Game> for Expertise {
-//         type Event = super::events::PreRollCheckEvent;
+    impl EventHandler<Game> for Expertise {
+        type Event = super::events::PreRollCheckEvent;
 
-//         fn handle<'s, 'e: 's>(
-//             &'s self,
-//             event: &'e mut Self::Event,
-//         ) -> impl IntoFuture<Output = ()> + 's {
-//             // If it isn't 'me' making the check...
-//             if !event.creature.ptr_eq(&self.me) {
-//                 return ready(());
-//             }
+        fn handle<'s, 'e: 's>(
+            &'s self,
+            event: &'e mut Self::Event,
+        ) -> impl IntoFuture<Output = ()> + 's {
+            // If it isn't 'me' making the check...
+            if !self.me.is(&event.creature) {
+                return ready(());
+            }
 
-//             // If the check is checking against something 'me' has Expertise in...
-//             if let Some(prof) = event.check.prof.as_deref()
-//                 && prof.contains(&self.skill)
-//             {
-//                 // Double the proficiency bonus, and label it with 'Expertise'.
-//                 event.prof_bonus = event
-//                     .prof_bonus
-//                     .take()
-//                     .map(|prof_bonus| (prof_bonus * 2).label(Rc::new(self.clone())));
-//             }
+            // If the check is checking against something 'me' has Expertise in...
+            if let Some(prof) = event.check.prof.as_deref()
+                && prof.contains(&self.skill)
+            {
+                // Double the proficiency bonus, and label it with 'Expertise'.
+                event.prof_bonus = event
+                    .prof_bonus
+                    .take()
+                    .map(|prof_bonus| (prof_bonus * 2).label(Rc::new(self.clone())));
+            }
 
-//             ready(())
-//         }
-//     }
+            ready(())
+        }
+    }
 
-//     #[derive(Debug)]
-//     pub struct AlwaysInspired {
-//         me: Weak<Creature>,
-//     }
+    #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+    pub struct AlwaysInspired {
+        me: Me,
+    }
 
-//     always_alive!(AlwaysInspired);
-//     impl ui::Ui for AlwaysInspired {}
+    impl ui::Ui for AlwaysInspired {}
+    register!(
+        AlwaysInspired,
+        register(Identity("TEST::ALWAYS_INSPIRED"), Lived(@always))
+    );
 
-//     impl EventHandler<Game> for AlwaysInspired {
-//         type Event = super::events::PreRollCheckEvent;
+    impl EventHandler<Game> for AlwaysInspired {
+        type Event = super::events::PreRollCheckEvent;
 
-//         fn handle<'s, 'e: 's>(
-//             &'s self,
-//             event: &'e mut Self::Event,
-//         ) -> impl IntoFuture<Output = ()> + 's {
-//             // If it isn't 'me' making the check...
-//             if !event.creature.ptr_eq(&self.me) {
-//                 return ready(());
-//             }
+        fn handle<'s, 'e: 's>(
+            &'s self,
+            event: &'e mut Self::Event,
+        ) -> impl IntoFuture<Output = ()> + 's {
+            // If it isn't 'me' making the check...
+            if !self.me.is(&event.creature) {
+                return ready(());
+            }
 
-//             event.test_dice = event.test_dice.clone().grant(Advantage { reason: None });
-//             ready(())
-//         }
-//     }
+            event.test_dice = event.test_dice.clone().grant(Advantage { reason: None });
+            ready(())
+        }
+    }
 
-//     #[test]
-//     fn check() {
-//         let game = Game::test();
-//         let creature = Rc::new_cyclic(|me| Creature {
-//             kind: CreatureKind::Monster(Monster {
-//                 cr: Cr::try_new(30).unwrap(),
-//             }),
-//             stats: StatBlock {
-//                 me: me.clone(),
-//                 proficiency_bonus: {
-//                     let mut provided = Provided::new();
-//                     provided.enroll_mut(MonsterProficiencyBonus { me: me.clone() });
-//                     provided
-//                 },
-//                 proficiencies: {
-//                     let mut profs = Proficiencies::new();
-//                     profs.insert_mut(SkillProficiency {
-//                         skill: Skill::Stealth,
-//                     });
-//                     profs.insert_mut(SkillProficiency {
-//                         skill: Skill::Intimidation,
-//                     });
-//                     profs
-//                 },
-//                 scores: AbilityScores {
-//                     str: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                     dex: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                     con: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                     int: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                     wis: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                     cha: stat_block::base_score(AbilityScore::try_from(20).unwrap()),
-//                 },
-//                 modifiers: AbilityModifiers::new(me.clone()),
-//                 health: Health::new(me.clone()),
-//             },
-//         });
+    #[test]
+    fn check() {
+        let game = Game::new(TestInterface);
+        let creature = test_creature();
 
-//         smol::block_on(async move {
-//             game.dispatcher
-//                 .dispatch(async move {
-//                     let game = Dispatcher::local().await;
+        creature.stats.proficiencies.insert(SkillProficiency {
+            skill: Skill::Stealth,
+        });
+        creature.stats.proficiencies.insert(SkillProficiency {
+            skill: Skill::Intimidation,
+        });
 
-//                     game.listen(Expertise {
-//                         me: Rc::downgrade(&creature),
-//                         skill: Skill::Stealth,
-//                     });
+        smol::block_on(async move {
+            game.dispatcher
+                .dispatch(async move {
+                    let game = Dispatcher::local().await;
 
-//                     game.listen(AlwaysInspired {
-//                         me: Rc::downgrade(&creature),
-//                     });
+                    game.listen(Expertise {
+                        me: creature.me(),
+                        skill: Skill::Stealth,
+                    });
 
-//                     let check = Check::for_skill(Skill::Stealth, Some(DC(40)));
-//                     let result = creature.check(check).await;
-//                     println!("{result:#?}");
-//                     println!(
-//                         "Total: {}",
-//                         result.into_result().unwrap().roll_result.total()
-//                     );
-//                 })
-//                 .await
-//         });
-//     }
-// }
+                    game.listen(AlwaysInspired { me: creature.me() });
+
+                    println!();
+
+                    let check = Check::for_skill(Skill::Stealth, Some(DC(15)));
+                    let result = creature.check(check).await;
+                    println!("{result:?}");
+                    println!(
+                        "Total: {}",
+                        result.into_result().unwrap().roll_result.total()
+                    );
+                })
+                .await
+        });
+    }
+}

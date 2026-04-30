@@ -136,15 +136,7 @@ where
 /// Handy macro for a type to always return `true` in [Lived::is_alive].
 #[macro_export]
 macro_rules! always_alive {
-    ($ty: path) => {
-        impl $crate::lived::Lived for $ty {
-            fn is_alive(&self) -> bool {
-                true
-            }
-        }
-    };
-
-    ($ty: path, $id: expr) => {
+    ($ty: path $(=>)?) => {
         impl $crate::lived::Lived for $ty {
             fn is_alive(&self) -> bool {
                 true
@@ -161,7 +153,7 @@ macro_rules! always_alive {
 /// - [OptionalDependency<Weak<dyn Lived>>] : [Some] => direct dependency; [None] => [always_alive]
 #[macro_export]
 macro_rules! dependently_alive {
-    ($ty: path, $field: tt) => {
+    ($ty: path => $field: tt) => {
         impl $crate::lived::Lived for $ty {
             fn is_alive(&self) -> bool {
                 $crate::lived::Lived::is_alive(&self.$field)
@@ -170,8 +162,19 @@ macro_rules! dependently_alive {
     };
 }
 
-pub use always_alive;
-pub use dependently_alive;
+#[doc(hidden)]
+pub mod macros {
+    pub use always_alive as always;
+    pub use dependently_alive as dependent;
+
+    #[allow(non_upper_case_globals)]
+    pub const always: () = ();
+
+    pub struct FieldName(Option<!>);
+
+    #[allow(unused_variables)]
+    pub fn dependent(dep: FieldName) {}
+}
 
 #[doc(hidden)]
 pub use crate::register_lived;
@@ -180,18 +183,43 @@ pub use crate::register_lived;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! register_lived {
+    (@autocomplete $helper: ident) => {
+        const _: () = {
+            use $crate::lived::macros::*;
+
+            #[allow(path_statements)]
+            $helper;
+        };
+    };
+    (@helper @<$($g: ident),*> ($helper: ident) $((($($extra: tt)*)))? $this: path) => {
+        $crate::register_lived!(@autocomplete $helper);
+        $crate::lived::macros::$helper!($this => $($($extra)*)?);
+    };
+    (@helper @<$($g: ident),*> ($helper: ident, $($helpers: ident),*) (($($extra: tt)*), $(($($extras: tt)*)),*) $this: path) => {
+        $crate::register_lived!(@helper @<$($g: ident),*> ($helper) (($($extra)*)) $this);
+        $crate::register_lived!(@helper @<$($g: ident),*> ($($helpers),*) ($(($($extras)*)),*) $this);
+    };
+
     (@inner @<$($g: ident),*> () $this: path) => {};
     (@inner @<$($g: ident),*> (@) $this: path) => {
         unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::dynx::registry::Deserializing> for rkyv::Archived<$this> {}
         unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::dynx::registry::Archiving> for rkyv::Archived<$this> {}
     };
-    (@<$($g: ident),*> ($($tt: tt)?) $this: path $(: $_tr: ty)?) => {
+    (@inner @<$($g: ident),*> ($($f: ident $(($($tt: tt)*))?),+ $(,)?) $this: path) => {
+        $crate::register_lived!(@inner @<$($g),*> () $this);
+        $crate::register_lived!(@helper @<$($g),*> ($($f),*) ($(($($($tt)*)?)),*) $this);
+    };
+    (@inner @<$($g: ident),*> (@ $($f: ident $(($($tt: tt)*))?),+ $(,)?) $this: path) => {
+        $crate::register_lived!(@inner @<$($g),*> (@) $this);
+        $crate::register_lived!(@helper @<$($g),*> ($($f),*) ($(($($($tt)*)?)),*) $this);
+    };
+    (@<$($g: ident),*> ($($tt: tt)*) $this: path $(: $_tr: ty)?) => {
         impl<$($g),*> $crate::lived::archiving::ArchivedLived for ::rkyv::Archived<$this> {}
 
         unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::lived::archiving::Living> for $this {}
         unsafe impl<$($g),*> $crate::dynx::registry::Registered<$crate::lived::archiving::LivedDeserializing> for rkyv::Archived<$this> {}
 
-        $crate::register_lived!(@inner @<$($g),*> ($($tt)?) $this);
+        $crate::register_lived!(@inner @<$($g),*> ($($tt)*) $this);
 
         ::inventory::submit! {
             $crate::lived::archiving::Living::new::<$this>()
@@ -200,7 +228,7 @@ macro_rules! register_lived {
 }
 
 pub mod prelude {
-    pub use super::{Lived, OptionalDependency, always_alive, dependently_alive};
+    pub use super::{Lived, OptionalDependency};
     pub use std::sync::{Arc, Weak};
 }
 

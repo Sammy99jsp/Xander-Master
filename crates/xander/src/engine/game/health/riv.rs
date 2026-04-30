@@ -7,7 +7,7 @@ use std::rc::Rc;
 use d20::ValTree;
 use dynx::{Namespace, dynx::Single};
 use xander_runtime::{
-    DynWeak, Lived, dependently_alive,
+    DynWeak, Lived,
     lived::{LivedList, LivedSerializable, OptionalDependency},
     register,
 };
@@ -23,18 +23,25 @@ pub struct RIV {
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Resistance(pub DamageEffect);
-dependently_alive!(Resistance, 0);
+
+register!(Resistance, register(Identity("HEALTH::RESISTANCE"), Lived(@dependent(0))));
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Vulnerability(pub DamageEffect);
-dependently_alive!(Vulnerability, 0);
+register!(
+    Vulnerability,
+    register(Identity("HEALTH::VULNERABILITY"), Lived(@dependent(0)))
+);
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct DamageEffect {
     pub dep: OptionalDependency<DynWeak<dyn LivedSerializable>>,
     pub to: DamageFilter,
 }
-dependently_alive!(DamageEffect, dep);
+register!(
+    DamageEffect,
+    register(Identity("HEALTH::DAMAGE_EFFECT"), Lived(@dependent(dep)))
+);
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum DamageFilter {
@@ -47,7 +54,7 @@ pub struct Immunity {
     pub dep: OptionalDependency<DynWeak<dyn LivedSerializable>>,
     pub to: ImmunityTarget,
 }
-dependently_alive!(Immunity, dep);
+register!(Immunity, register(Identity("HEALTH::IMMUNITY"), Lived(@dependent(dep))));
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum ImmunityTarget {
@@ -105,7 +112,6 @@ pub trait DamageEffectTrait: xander_runtime::ui::Ui {
 
 fn has_label_recur<Op: DamageEffectTrait>(mut damage: &ValTree) -> bool {
     loop {
-        println!("{damage:?}");
         let ValTree::Labeled(d20::Labeled(
             box ValTree::BinaryOperation(
                 lhs,
@@ -117,8 +123,6 @@ fn has_label_recur<Op: DamageEffectTrait>(mut damage: &ValTree) -> bool {
         else {
             return false;
         };
-
-        println!("{:?}", label.0);
 
         if label.0.as_ref().is_some_and(|l| l.is::<Op>()) && *op == Op::OP && *rhs == Op::RHS {
             return true;
@@ -203,17 +207,6 @@ pub mod ui {
     impl ui::Ui for Vulnerability {}
     impl ui::Ui for Immunity {}
 }
-
-register!(Resistance, register(Identity("HEALTH::RESISTANCE"), Lived(@)));
-register!(
-    Vulnerability,
-    register(Identity("HEALTH::VULNERABILITY"), Lived(@))
-);
-register!(Immunity, register(Identity("HEALTH::IMMUNITY"), Lived(@)));
-register!(
-    DamageEffect,
-    register(Identity("HEALTH::DAMAGE_EFFECT"), Lived(@))
-);
 
 #[cfg(test)]
 mod tests {

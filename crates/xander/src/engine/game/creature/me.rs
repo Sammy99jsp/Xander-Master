@@ -16,6 +16,18 @@ use crate::engine::game::creature::Creature;
 #[derive(Clone)]
 pub struct Me(pub(super) Weak<Creature>);
 
+impl Me {
+    #[inline]
+    pub fn is(&self, creature: &Weak<Creature>) -> bool {
+        std::ptr::addr_eq(Self::as_ptr(self), creature.as_ptr())
+    }
+
+    #[inline]
+    pub fn as_ptr(me: &Self) -> *const Creature {
+        me.0.as_ptr()
+    }
+}
+
 impl std::fmt::Debug for Me {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Me").finish()

@@ -70,12 +70,9 @@ pub mod profs {
         pub ability: Ability,
     }
 
-    register!(SaveProficiency: dyn ProficiencyBase, register(Identity("SAVE")));
-    always_alive!(SaveProficiency);
+    register!(SaveProficiency: dyn ProficiencyBase, register(Archive, Deserialize, Identity("SAVE"), Lived(always)));
 
     impl ArchivedProficiencyBase for rkyv::Archived<SaveProficiency> {}
-
-    register!(SaveProficiency: dyn ProficiencyBase, register(Archive, Deserialize, Lived));
 
     impl Proficiency for SaveProficiency {
         type Application = Ability;

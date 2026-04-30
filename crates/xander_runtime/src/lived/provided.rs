@@ -201,8 +201,8 @@ where
 
 pub mod prelude {
     pub use super::{ArchivedProvisoBase, Cause, Provided, Proviso, ProvisoBase};
-    pub use crate::lived::{Lived, always_alive};
-    pub use crate::{identity, register};
+    pub use crate::lived::Lived;
+    pub use crate::register;
     pub use std::{
         ops::ControlFlow,
         rc::{Rc, Weak},
@@ -332,7 +332,6 @@ mod tests {
     use rkyv::{Archive, Deserialize, Serialize, from_bytes, rancor::Error, to_bytes};
 
     use crate::{
-        always_alive,
         lived::provided::{ArchivedProvisoBase, Provided, Proviso, ProvisoBase},
         register,
     };
@@ -342,9 +341,7 @@ mod tests {
         #[derive(Debug, Archive, Serialize, Deserialize)]
         pub struct BaseAC(u32);
 
-        always_alive!(BaseAC);
-
-        register!(@<A, B> BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize));
+        register!(BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize, Lived(always)));
         // register!(BaseAC: dyn ProvisoBase<u32>, register(Archive(a), Deserialize(a)));
         // register!(BaseAC: dyn ProvisoBase<u32>, register(Archive, Deserialize, Lived));
         impl ArchivedProvisoBase<u32> for ArchivedBaseAC {}
