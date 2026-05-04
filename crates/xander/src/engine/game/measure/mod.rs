@@ -1,19 +1,40 @@
 pub mod currency;
+pub mod time;
+
+use std::ops::{Add, Sub};
 
 pub use currency::*;
 use rkyv::{Archive, Deserialize, Serialize};
 
 pub const FEET_PER_SQUARE: u32 = 5;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Archive, Serialize, Deserialize)]
-pub struct Feet(pub u32);
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Archive, Serialize, Deserialize,
+)]
+pub struct Feet<T = u32>(pub T);
 
-#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Archive, Serialize, Deserialize)]
 pub struct Squares(pub u32);
 
 impl Squares {
-    pub const fn from_feet(feet: f64) -> Squares {
+    pub const fn from_feet_f64(feet: f64) -> Squares {
         Squares((feet / FEET_PER_SQUARE as f64).ceil() as u32)
+    }
+
+    pub fn checked_add_signed(&self, rhs: i32) -> Option<Squares> {
+        self.0.checked_add_signed(rhs).map(Self)
+    }
+}
+
+impl From<Feet> for Squares {
+    fn from(value: Feet) -> Self {
+        Squares(value.0.div_ceil(FEET_PER_SQUARE))
+    }
+}
+
+impl From<Squares> for Feet {
+    fn from(value: Squares) -> Self {
+        Feet(value.0 * FEET_PER_SQUARE)
     }
 }
 
@@ -72,5 +93,23 @@ impl Duration {
 
     pub const fn as_hours(self) -> u32 {
         self.0 / SECS_PER_MIN / MIN_PER_HOUR
+    }
+}
+
+// Math
+
+impl<U, T: Add<U>> Add<Feet<U>> for Feet<T> {
+    type Output = Feet<T::Output>;
+
+    fn add(self, rhs: Feet<U>) -> Self::Output {
+        Feet(self.0 + rhs.0)
+    }
+}
+
+impl<U, T: Sub<U>> Sub<Feet<U>> for Feet<T> {
+    type Output = Feet<T::Output>;
+
+    fn sub(self, rhs: Feet<U>) -> Self::Output {
+        Feet(self.0 - rhs.0)
     }
 }

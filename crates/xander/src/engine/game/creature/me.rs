@@ -26,6 +26,10 @@ impl Me {
     pub fn as_ptr(me: &Self) -> *const Creature {
         me.0.as_ptr()
     }
+
+    pub fn to_weak(&self) -> Weak<Creature> {
+        self.0.clone()
+    }
 }
 
 impl std::fmt::Debug for Me {

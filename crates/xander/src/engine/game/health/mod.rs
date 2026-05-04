@@ -8,13 +8,13 @@ pub mod temp_hp;
 
 use std::{cell::Cell, num::NonZeroU32};
 
-use xander_runtime::{dynx::cells::InnerValue, lived::cell::LivedCell};
+use xander_runtime::{dynx::cells::InnerValue, flow::Event, lived::cell::LivedCell};
 
 pub(super) type HpValue = u32;
 
 use crate::engine::game::{
     creature::{CreatureKind, Me},
-    health::{death::Dead, riv::RIV, temp_hp::Discounted},
+    health::{damage::DamageSource, death::Dead, riv::RIV, temp_hp::Discounted},
 };
 
 pub use self::{
@@ -31,7 +31,7 @@ pub struct Health {
     pub hit_die: HitDie,
     pub temp_hp: LivedCell<TempHp>,
     pub max_hp: MaxHp,
-    pub current: CurrentHp,
+    current: CurrentHp,
     pub riv: RIV,
     #[rkyv(with = InnerValue<Option<Dead>>)]
     dead: Cell<Option<Dead>>,
@@ -62,9 +62,25 @@ impl Health {
         })
     }
 
-    pub async fn damage(&self, mut damage: Damage<d20::ValTree>) -> Result<DamageReport, !> {
+    pub fn current(&self) -> HpValue {
+        self.current.value.get()
+    }
+
+    pub async fn damage(
+        &self,
+        damage: Damage<d20::ValTree>,
+        source: DamageSource,
+    ) -> Result<DamageReport, events::CreatureHurtCancelledReason> {
         // "Order of Application"
-        // TODO: 1. Circumstantial Adjustments
+        // 1. Circumstantial Adjustments
+        let events::CreatureHurtEvent { mut damage, .. } = events::CreatureHurtEvent {
+            cancelled: Default::default(),
+            damage,
+            source,
+        }
+        .handle()
+        .await
+        .into_result()?;
 
         // Apply 2. and 3. (Resistance, Vulnerability, then Immunity)
         self.riv.apply_to_damage(&mut damage);
@@ -77,7 +93,7 @@ impl Health {
                     return Ok(DamageReport {
                         discounted: None,
                         total: 0,
-                        source: damage,
+                        dealt: damage,
                         outcome: DamageOutcome::Nothing,
                     });
                 }
@@ -87,7 +103,7 @@ impl Health {
             DamageReport {
                 discounted: None,
                 total,
-                source: damage,
+                dealt: damage,
                 outcome: DamageOutcome::Hurt,
             }
         };
@@ -109,6 +125,8 @@ impl Health {
 
             let hp_after = current_hp.saturating_sub(report.total);
             let excess = report.total.saturating_sub(current_hp);
+
+            self.current.value.set(hp_after);
 
             (hp_after, excess)
         };
@@ -148,9 +166,9 @@ impl Health {
 
 #[derive(Debug)]
 pub struct DamageReport {
-    pub discounted: Option<NonZeroU32>,
+    pub dealt: Damage<d20::ValTree>,
     pub total: u32,
-    pub source: Damage<d20::ValTree>,
+    pub discounted: Option<NonZeroU32>,
     pub outcome: DamageOutcome,
 }
 
@@ -162,7 +180,53 @@ pub enum DamageOutcome {
     Killed,
 }
 
-pub mod events {}
+pub mod events {
+    use std::{future::ready, rc::Weak};
+
+    use xander_runtime::{
+        flow::{Event, event::EventBase},
+        register, ui,
+    };
+
+    use crate::engine::game::{
+        Game,
+        health::{Damage, damage::DamageSource},
+    };
+
+    #[derive(Debug)]
+    pub struct CreatureHurtCancelledReason {
+        pub reason: Weak<dyn ui::Ui>,
+    }
+
+    #[derive(Debug)]
+    pub struct CreatureHurtEvent {
+        pub cancelled: Option<CreatureHurtCancelledReason>,
+        pub damage: Damage<d20::ValTree>,
+        pub source: DamageSource,
+    }
+
+    register!(CreatureHurtEvent: dyn EventBase<Game>, register(Identity("HEALTH::CREATURE_HURT")));
+
+    impl EventBase<Game> for CreatureHurtEvent {
+        fn is_cancelled(&self) -> bool {
+            self.cancelled.is_some()
+        }
+    }
+
+    impl Event<Game> for CreatureHurtEvent {
+        type Resolved = Self;
+
+        fn map_resolved(self) -> impl IntoFuture<Output = Self::Resolved> {
+            ready(self)
+        }
+
+        type Cancelled = CreatureHurtCancelledReason;
+
+        fn map_cancelled(self) -> impl IntoFuture<Output = Self::Cancelled> {
+            ready(self.cancelled.unwrap())
+        }
+    }
+}
 
 pub mod decisions {}
 

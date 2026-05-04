@@ -1,13 +1,9 @@
 use rkyv::rancor::{Fallible, Source};
-use xander_runtime::flow::io::Actor;
 
 use crate::engine::game::stats::proficiency::ProficiencyBonus;
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-pub struct Character {
-    /// Who plays this character?
-    pub actor: Actor,
-}
+pub struct Character {}
 
 #[repr(transparent)]
 #[rustc_layout_scalar_valid_range_start(1)] // (1)

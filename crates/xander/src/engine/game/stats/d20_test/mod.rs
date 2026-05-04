@@ -11,20 +11,19 @@ use xander_runtime::{
         decision::Response,
         dispatcher::DispatchState,
         io::{Decision, IntoDecision},
-    }, register,
+    },
+    register,
 };
 
 use crate::{
-    engine::{
-        game::{
-            Dispatcher, Game,
-            creature::Creature,
-            stats::{
-                ability::{Ability, AbilityModifier},
-                proficiency::ProficiencyApplicationBase,
-            },
+    engine::game::{
+        Dispatcher, Game,
+        combat::Combatant,
+        creature::Creature,
+        stats::{
+            ability::{Ability, AbilityModifier},
+            proficiency::ProficiencyApplicationBase,
         },
-        io::User,
     },
     prelude::event::Outcome,
 };
@@ -43,9 +42,9 @@ fn d20_test() -> d20::DExpr {
     d20::D20.label(Rc::new(utils::TestRoll))
 }
 
-pub(super) fn equals_or_exceeds<T: TargetNumber>(roll_result: &d20::ValTree, target: &T) -> bool {
+pub(super) fn equals_or_exceeds(roll_result: &d20::ValTree, target: &d20::ValTree) -> bool {
     matches!(
-        roll_result.total().cmp(&(*target).into()),
+        roll_result.total().cmp(&target.total()),
         Ordering::Equal | Ordering::Greater
     )
 }
@@ -54,10 +53,11 @@ pub(super) fn equals_or_exceeds<T: TargetNumber>(roll_result: &d20::ValTree, tar
 pub struct D20TestBase<'a, Test>
 where
     Test: D20Test,
+    Test::Target: TargetNumber,
 {
     pub(super) ability: &'a Ability,
     pub(super) prof: Option<&'a dyn ProficiencyApplicationBase>,
-    pub(super) target: Result<&'a Test::Target, Test::Ambiguity>,
+    pub(super) target: Result<Test::Target, Test::Ambiguity>,
 }
 
 /// Common state between all [D20Test::PreRoll] impls.
@@ -147,10 +147,14 @@ pub trait D20Test: Sized {
 
     /// See [D20TestBase].
     #[doc(hidden)]
-    fn base(&self) -> D20TestBase<'_, Self>;
+    fn base(&self) -> impl IntoFuture<Output = D20TestBase<'_, Self>>;
 
-    fn perform(self, me: &Rc<Creature>) -> impl IntoFuture<Output = Outcome<Self::PostResult>> {
+    fn perform(
+        self,
+        combatant: &Rc<Combatant>,
+    ) -> impl IntoFuture<Output = Outcome<Self::PostResult>> {
         async {
+            let me = &combatant.creature;
             // 4. "Roll 1d20"
             let test_dice = d20_test();
 
@@ -159,9 +163,9 @@ pub trait D20Test: Sized {
                 ability,
                 prof,
                 target,
-            } = self.base();
+            } = self.base().await;
 
-            let (ability, target) = (*ability, target.copied());
+            let (ability, target) = (*ability, target);
 
             // 5.1 "The Relevant Ability Modifier"
             let ability_modifier = me.stats.modifiers.get(ability).await;
@@ -217,9 +221,10 @@ pub trait D20Test: Sized {
             // Roll for the check, including all bonuses/penalties.
 
             let game = Dispatcher::local().await;
-            let User { roller, .. } = game.interface().state_for(me.actor());
+            let agent = game.interface().state_for(combatant.actor);
 
-            let roll_result = roller
+            let roll_result = agent
+                .roller()
                 .roll(&roll)
                 .await
                 .expect("valid dice expr, no errors whilst rolling");
@@ -239,6 +244,12 @@ pub trait D20Test: Sized {
 
             let (test, test_result) = match target {
                 Ok(set_target) => {
+                    let set_target = agent
+                        .roller()
+                        .roll(set_target.get())
+                        .await
+                        .expect("valid dice expr, no errors whilst rolling");
+
                     // We can finally compare the result to the target number.
                     let test_result =
                         <Self::Result as TestResult<Self>>::result_for(&set_target, &roll_result);
@@ -276,7 +287,9 @@ pub trait D20Test: Sized {
 
 /// The target number for a test is compared with a test roll
 /// to determine whether the roll succeeds.
-pub trait TargetNumber: Copy + Into<i32> {}
+pub trait TargetNumber: Clone {
+    fn get(&self) -> &d20::DExpr;
+}
 
 /// The process for determining the result of a test
 /// based on its [TargetNumber] and the test roll.
@@ -284,7 +297,7 @@ pub trait TestResult<Test>
 where
     Test: D20Test,
 {
-    fn result_for(target: &Test::Target, roll_result: &d20::ValTree) -> Test::Result;
+    fn result_for(target: &d20::ValTree, roll_result: &d20::ValTree) -> Test::Result;
 }
 
 /// Allows for ad-hoc decision-making for when the [TargetNumber]
@@ -306,16 +319,14 @@ where
 // Shared impls for {Check, Save}
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct DC(pub i32);
+pub struct Dc<T = d20::DExpr>(pub T);
 
 #[derive(Debug, Clone, Copy)]
 pub struct AmbiguousDC;
 
-impl TargetNumber for DC {}
-
-impl From<DC> for i32 {
-    fn from(value: DC) -> Self {
-        value.0
+impl TargetNumber for Dc {
+    fn get(&self) -> &d20::DExpr {
+        &self.0
     }
 }
 

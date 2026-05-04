@@ -51,14 +51,15 @@ impl GargantuanDim {
 impl CreatureSize {
     pub const fn dims_squares(self) -> (Squares, Squares) {
         match self {
-            CreatureSize::Tiny => (Squares::from_feet(2.5), Squares::from_feet(2.5)),
-            CreatureSize::Small => (Squares::from_feet(5.0), Squares::from_feet(5.0)),
-            CreatureSize::Medium => (Squares::from_feet(5.0), Squares::from_feet(5.0)),
-            CreatureSize::Large => (Squares::from_feet(10.0), Squares::from_feet(10.0)),
-            CreatureSize::Huge => (Squares::from_feet(15.0), Squares::from_feet(15.0)),
-            CreatureSize::Gargantuan(GargantuanDim(x), GargantuanDim(y)) => {
-                (Squares::from_feet(x as f64), Squares::from_feet(y as f64))
-            }
+            CreatureSize::Tiny => (Squares::from_feet_f64(2.5), Squares::from_feet_f64(2.5)),
+            CreatureSize::Small => (Squares::from_feet_f64(5.0), Squares::from_feet_f64(5.0)),
+            CreatureSize::Medium => (Squares::from_feet_f64(5.0), Squares::from_feet_f64(5.0)),
+            CreatureSize::Large => (Squares::from_feet_f64(10.0), Squares::from_feet_f64(10.0)),
+            CreatureSize::Huge => (Squares::from_feet_f64(15.0), Squares::from_feet_f64(15.0)),
+            CreatureSize::Gargantuan(GargantuanDim(x), GargantuanDim(y)) => (
+                Squares::from_feet_f64(x as f64),
+                Squares::from_feet_f64(y as f64),
+            ),
         }
     }
 }

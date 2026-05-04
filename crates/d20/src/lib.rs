@@ -3,13 +3,14 @@
 //! engine.
 //!
 
-#![feature(never_type)]
+#![feature(never_type, box_patterns)]
 
 pub mod dynx;
 pub mod eval;
 pub mod parser;
 pub mod provider;
 pub mod utils;
+pub mod pretty;
 
 use std::rc::Rc;
 
@@ -18,12 +19,12 @@ pub use provider::DiceRoller;
 
 #[cfg(feature = "rand")]
 pub use provider::local_rng::LocalRng;
+
+
 use xander_runtime::dynx::rkyv;
 
-pub mod reexport {
-    #[cfg(feature = "rand")]
-    pub use rand;
-}
+#[cfg(feature = "rand")]
+pub use rand;
 
 /// A dice expression.
 #[rustfmt::skip]

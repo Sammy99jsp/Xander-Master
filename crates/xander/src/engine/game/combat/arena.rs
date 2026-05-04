@@ -1,16 +1,13 @@
-use std::{
-    cell::RefCell,
-    rc::{Rc, Weak},
-};
+use std::{cell::RefCell, rc::Weak};
 
 use xander_runtime::{DynWeak, dynx::cells::InnerValue, lived::LivedList};
 
-use crate::engine::game::{combat::Combatant, magic::aoe::AreaOfEffect};
+use crate::engine::game::{combat::Combatant, magic::aoe::AreaOfEffect, measure::Squares};
 
 #[derive(Debug, Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Square {
     #[rkyv(with = InnerValue<Vec<Weak<Combatant>>>)]
-    pub occupants: RefCell<Vec<Weak<Combatant>>>,
+    occupants: RefCell<Vec<Weak<Combatant>>>,
     pub effects: LivedList<DynWeak<dyn AreaOfEffect>>,
 }
 
@@ -30,27 +27,29 @@ impl Square {
             .any(|a| !a.upgrade().unwrap().creature.is_dead())
     }
 
-    pub fn remove_occupant(&self, me: &Rc<Combatant>) {
+    pub fn remove_occupant(&self, me: Weak<Combatant>) {
         let mut occupants = self.occupants.borrow_mut();
-        let index = occupants
-            .iter()
-            .position(|a| std::ptr::addr_eq(a.as_ptr(), Rc::as_ptr(me)));
+        let index = occupants.iter().position(|a| a.ptr_eq(&me));
 
         if let Some(index) = index {
             occupants.swap_remove(index);
         }
     }
 
-    pub fn add_occupant(&self, me: &Rc<Combatant>) {
+    pub fn add_occupant(&self, me: Weak<Combatant>) {
         let mut occupants = self.occupants.borrow_mut();
-        occupants.push(Rc::downgrade(me));
+        occupants.push(me);
+    }
+
+    pub fn occupants(&self) -> Vec<Weak<Combatant>> {
+        self.occupants.borrow().clone()
     }
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Dimensions {
-    pub width: u32,
-    pub height: u32,
+    pub width: Squares,
+    pub height: Squares,
 }
 
 impl Dimensions {
@@ -61,8 +60,8 @@ impl Dimensions {
 
 #[derive(Debug, Clone, Copy, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Position {
-    pub x: u32,
-    pub y: u32,
+    pub x: Squares,
+    pub y: Squares,
 }
 
 pub const DIRECTIONS: [[i32; 2]; 8] = [
@@ -85,7 +84,7 @@ pub struct Arena {
 impl Arena {
     pub fn new(dimensions: Dimensions) -> Self {
         let mut grid = Vec::new();
-        let n = dimensions.width as usize * dimensions.height as usize;
+        let n = dimensions.width.0 as usize * dimensions.height.0 as usize;
         grid.reserve_exact(n);
 
         for _ in 0..n {
@@ -98,31 +97,44 @@ impl Arena {
         }
     }
 
+    #[cfg(test)]
+    pub fn test() -> Self {
+        Self::new(Dimensions {
+            width: Squares(5),
+            height: Squares(5),
+        })
+    }
+
     #[inline]
     fn flat_index(&self, pos: Position) -> Option<usize> {
         self.dimensions
             .check_pos(pos)
-            .map(|Position { x, y }| (y * self.dimensions.width + x) as usize)
+            .map(|Position { x, y }| (y.0 * self.dimensions.width.0 + x.0) as usize)
     }
 
     pub fn at(&self, pos: Position) -> Option<&Square> {
         self.grid.get(self.flat_index(pos)?)
     }
 
-    pub fn distance(from: Position, to: Position) -> u32 {
+    #[inline]
+    pub fn distance(from: Position, to: Position) -> Squares {
+        #[inline]
         const fn sgn(x: i32) -> i32 {
             if x < 0 { -1 } else { 1 }
         }
 
-        let (delta_x, delta_y) = (to.x as i32 - from.x as i32, to.y as i32 - from.y as i32);
-        let c = i32::min(delta_x, delta_y);
+        let (delta_x, delta_y) = (
+            to.x.0 as i32 - from.x.0 as i32,
+            to.y.0 as i32 - from.y.0 as i32,
+        );
+        let c = i32::min(delta_x.abs(), delta_y.abs());
         let a = sgn(delta_x) * (delta_x - sgn(delta_x) * c);
         let b = sgn(delta_y) * (delta_y - sgn(delta_y) * c);
 
         let distance = a + b + c;
         debug_assert!(distance >= 0);
 
-        distance as u32
+        Squares(distance as u32)
     }
 
     pub fn around(&self, pos @ Position { x, y }: Position) -> Option<Around<'_>> {
@@ -134,6 +146,52 @@ impl Arena {
             }),
         })
     }
+
+    pub fn display_debug(&self) -> String {
+        let displ_w = self.dimensions.width.0 as usize * 2 + 1 + 2;
+        let displ_h = self.dimensions.height.0 as usize * 2 + 2;
+
+        const CORNER: [[char; 2]; 2] = [['┌', '┐'], ['└', '┘']];
+        const LINES: [char; 2] = ['─', '│'];
+        const EMPTY: char = '·';
+        const NEW_LINE: char = '\n';
+
+        let mut output = String::with_capacity(displ_h * (displ_w + 1));
+
+        {
+            output.push(CORNER[0][0]);
+            (0..(displ_w - 2)).for_each(|_| output.push(LINES[0]));
+            output.push(CORNER[0][1]);
+            output.push(NEW_LINE);
+        }
+
+        for row in self.grid.chunks(self.dimensions.width.0 as usize) {
+            output.push(LINES[1]);
+            output.push(' ');
+            for sq in row {
+                #[rustfmt::skip]
+                let o = sq.occupants.borrow()
+                .first().cloned()
+                .as_ref().and_then(Weak::upgrade)
+                .and_then(|a|a.creature.name.chars().next())
+                .unwrap_or(EMPTY);
+
+                output.push(o);
+                output.push(' ');
+            }
+            output.push(LINES[1]);
+            output.push(NEW_LINE);
+        }
+
+        {
+            output.push(CORNER[1][0]);
+            (0..(displ_w - 2)).for_each(|_| output.push(LINES[0]));
+            output.push(CORNER[1][1]);
+            output.push(NEW_LINE);
+        }
+
+        output
+    }
 }
 
 /// Shows the squares around a point
@@ -144,39 +202,38 @@ pub struct Around<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::Cell, rc::Rc};
+    use std::rc::Rc;
 
     use super::Position;
     use crate::engine::game::{
-        combat::{
-            Combatant,
-            arena::{Arena, DIRECTIONS},
-        },
-        creature::test_creature,
+        combat::arena::{Arena, DIRECTIONS},
+        creature::test_combatant,
+        measure::Squares,
     };
 
     #[test]
-    fn test_thingy() {
+    fn around() {
         let arena = Arena::new(super::Dimensions {
-            width: 5,
-            height: 5,
+            width: Squares(5),
+            height: Squares(5),
         });
 
-        let creature = test_creature();
-        let combatant = Rc::new(Combatant {
-            creature,
-            initiative_score: 20,
-            position: Cell::new(Position { x: 0, y: 0 }),
-        });
+        let combatant = test_combatant();
 
         arena
-            .at(Position { x: 0, y: 0 })
+            .at(Position {
+                x: Squares(0),
+                y: Squares(0),
+            })
             .unwrap()
             .occupants
             .borrow_mut()
             .push(Rc::downgrade(&combatant));
 
-        let around = arena.around(Position { x: 0, y: 5343 });
+        let around = arena.around(Position {
+            x: Squares(0),
+            y: Squares(5343),
+        });
 
         if let Some(around) = around {
             around
@@ -185,5 +242,23 @@ mod tests {
                 .enumerate()
                 .for_each(|(i, sq)| println!("{:?} => {sq:?}", DIRECTIONS[i]));
         }
+    }
+
+    #[test]
+    pub fn distance_between() {
+        fn dist(p1: (u32, u32), p2: (u32, u32)) -> u32 {
+            let from = Position {
+                x: Squares(p1.0),
+                y: Squares(p1.1),
+            };
+            let to = Position {
+                x: Squares(p2.0),
+                y: Squares(p2.1),
+            };
+            Arena::distance(from, to).0
+        }
+
+        let d1 = dist((3, 3), (2, 2));
+        assert_eq!(d1, 1);
     }
 }

@@ -1,11 +1,11 @@
-use std::rc::Rc;
+use std::{future::ready, rc::Rc};
 
 use crate::{
     engine::game::{
-        creature::Creature,
+        combat::Combatant,
         stats::{
             ability::Ability,
-            d20_test::{AmbiguousDC, DC, TestResult, equals_or_exceeds},
+            d20_test::{AmbiguousDC, Dc, TestResult, equals_or_exceeds},
             proficiency::ProficiencyApplicationBase,
             skill::Skill,
         },
@@ -21,11 +21,11 @@ pub use super::{
 pub struct Check {
     pub ability: Ability,
     pub prof: Option<Box<dyn ProficiencyApplicationBase>>,
-    pub dc: Option<DC>,
+    pub dc: Option<Dc>,
 }
 
 impl Check {
-    pub fn for_skill(skill: Skill, dc: Option<DC>) -> Self {
+    pub fn for_skill(skill: Skill, dc: Option<Dc>) -> Self {
         Self {
             ability: skill.ability(),
             prof: Some(Box::new(skill)),
@@ -34,26 +34,26 @@ impl Check {
     }
 }
 
-impl Creature {
+impl Combatant {
     pub async fn check(self: &Rc<Self>, check: Check) -> Outcome<events::PostResultCheckEvent> {
         check.perform(self).await
     }
 }
 
 impl D20Test for Check {
-    type Target = DC;
+    type Target = Dc;
     type Result = CheckResult;
     type Ambiguity = AmbiguousDC;
     type PreRoll = events::PreRollCheckEvent;
     type PreResult = events::PreResultCheckEvent;
     type PostResult = events::PostResultCheckEvent;
 
-    fn base(&self) -> D20TestBase<'_, Self> {
-        D20TestBase {
+    fn base(&self) -> impl IntoFuture<Output = D20TestBase<'_, Self>> {
+        ready(D20TestBase {
             ability: &self.ability,
             prof: self.prof.as_deref(),
-            target: self.dc.as_ref().ok_or(AmbiguousDC),
-        }
+            target: self.dc.clone().ok_or(AmbiguousDC),
+        })
     }
 }
 
@@ -64,7 +64,7 @@ pub enum CheckResult {
 }
 
 impl TestResult<Check> for CheckResult {
-    fn result_for(dc: &DC, roll_result: &d20::ValTree) -> CheckResult {
+    fn result_for(dc: &d20::ValTree, roll_result: &d20::ValTree) -> CheckResult {
         match equals_or_exceeds(roll_result, dc) {
             true => CheckResult::Pass,
             false => CheckResult::Fail,
@@ -295,9 +295,10 @@ mod tests {
 
     use crate::engine::game::{
         Dispatcher, Game,
-        creature::{Me, test_creature},
+        combat::arena::Arena,
+        creature::{Me, test_combatant},
         stats::{
-            d20_test::{Advantage, D20TestRoll, DC, check::Check},
+            d20_test::{Advantage, D20TestRoll, Dc, check::Check},
             skill::{Skill, profs::SkillProficiency},
         },
     };
@@ -368,15 +369,23 @@ mod tests {
 
     #[test]
     fn check() {
-        let game = Game::new(TestInterface);
-        let creature = test_creature();
+        let game = Game::new(TestInterface, Arena::test());
+        let combatant = test_combatant();
 
-        creature.stats.proficiencies.insert(SkillProficiency {
-            skill: Skill::Stealth,
-        });
-        creature.stats.proficiencies.insert(SkillProficiency {
-            skill: Skill::Intimidation,
-        });
+        combatant
+            .creature
+            .stats
+            .proficiencies
+            .insert(SkillProficiency {
+                skill: Skill::Stealth,
+            });
+        combatant
+            .creature
+            .stats
+            .proficiencies
+            .insert(SkillProficiency {
+                skill: Skill::Intimidation,
+            });
 
         smol::block_on(async move {
             game.dispatcher
@@ -384,16 +393,22 @@ mod tests {
                     let game = Dispatcher::local().await;
 
                     game.listen(Expertise {
-                        me: creature.me(),
+                        me: combatant.creature.me(),
                         skill: Skill::Stealth,
                     });
 
-                    game.listen(AlwaysInspired { me: creature.me() });
+                    game.listen(AlwaysInspired {
+                        me: combatant.creature.me(),
+                    });
 
                     println!();
 
-                    let check = Check::for_skill(Skill::Stealth, Some(DC(15)));
-                    let result = creature.check(check).await;
+                    let check = Check::for_skill(
+                        Skill::Stealth,
+                        Some(Dc(<d20::DExpr as From<i32>>::from(15))),
+                    );
+
+                    let result = combatant.check(check).await;
                     println!("{result:?}");
                     println!(
                         "Total: {}",

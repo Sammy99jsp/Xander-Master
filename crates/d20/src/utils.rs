@@ -47,6 +47,28 @@ impl ValTree {
 impl xander_runtime::ui::Ui for DExpr {}
 impl xander_runtime::ui::Ui for ValTree {}
 
+// DEFAULTS
+
+impl DExpr {
+    pub const ZERO: Self = DExpr::Literal(Literal::Int(Int(0)));
+}
+
+impl Default for DExpr {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
+impl ValTree {
+    pub const ZERO: Self = ValTree::Literal(Literal::Int(Int(0)));
+}
+
+impl Default for ValTree {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 // Conversions
 
 impl From<Dice> for DExpr {
@@ -83,11 +105,28 @@ impl From<i32> for ValTree {
 
 use std::{
     cmp::Ordering,
-    ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, Mul, Neg, Rem, Sub, SubAssign},
     rc::Rc,
 };
 
 macro_rules! op {
+    (Neg, neg) => {
+        impl Neg for DExpr {
+            type Output = Self;
+
+            fn neg(self) -> Self::Output {
+                Self::UnaryOperation(UnaryOperator::Negative, Box::new(self))
+            }
+        }
+
+        impl Neg for ValTree {
+            type Output = Self;
+
+            fn neg(self) -> Self::Output {
+                Self::UnaryOperation(UnaryOperator::Negative, Box::new(self))
+            }
+        }
+    };
     ($op: ident, $fn_name: ident) => {
         impl $op<DExpr> for DExpr {
             type Output = DExpr;
@@ -180,21 +219,12 @@ macro_rules! op {
     };
 }
 
+op!(Neg, neg);
 op!(Add, add);
 op!(Sub, sub);
 op!(Mul, mul);
 op!(Div, div);
 op!(Rem, rem);
-
-impl ValTree {
-    pub fn modify_in_place(&mut self, func: impl FnOnce(Self) -> Self) {
-        replace_expr(self, func);
-    }
-
-    pub fn int_div(self, div: i32) -> Self {
-        Self::BinaryOperation(Box::new(self), Op::IntDiv, Box::new(div.into()))
-    }
-}
 
 fn replace_expr<A: Clone>(expr: &mut A, func: impl FnOnce(A) -> A) {
     *expr = func(expr.clone());
@@ -223,3 +253,105 @@ impl SubAssign for ValTree {
         replace_expr(self, move |expr| expr - rhs);
     }
 }
+
+// Finding things with labels
+
+macro_rules! find_labelled_impl {
+    ($(@$mut: ident,)? $ty: ident, $fn_name: ident, $iter_fn: ident) => {
+
+        impl $ty {
+            pub fn $fn_name<L>(&$($mut)? self) -> Option<&$($mut)? Self>
+            where
+                L: ::xander_runtime::ui::Ui,
+            {
+                let labelled_expr = match self {
+                    $ty::Literal(..) => return None,
+                    $ty::Dice(..) => return None,
+                    $ty::UnaryOperation(_, expr) => return Self::$fn_name::<L>(expr),
+                    $ty::Set(exprs) => {
+                        return exprs
+                            .$iter_fn()
+                            .filter_map(|expr| Self::$fn_name::<L>(expr))
+                            .next();
+                    }
+                    $ty::SetOperation(expr, _) => return Self::$fn_name::<L>(expr),
+                    $ty::BinaryOperation(lhs, _, rhs) => {
+                        return Self::$fn_name::<L>(lhs).or_else(|| Self::$fn_name::<L>(rhs));
+                    }
+                    expr @ $ty::Labeled(..) => expr,
+                };
+
+                // If the label doesn't match...
+                if let $ty::Labeled(Labeled(_, with_label)) = labelled_expr
+                    && !with_label.0.as_ref().is_some_and(|l| l.is::<L>())
+                {
+                    return None;
+                }
+
+                Some(labelled_expr)
+            }
+
+        }
+    };
+}
+find_labelled_impl!(@mut, DExpr, find_labelled_mut, iter_mut);
+find_labelled_impl!(DExpr, find_labelled, iter);
+
+find_labelled_impl!(ValTree, find_labelled_val, iter);
+find_labelled_impl!(@mut, ValTree, find_labelled_val_mut, iter_mut);
+
+macro_rules! traverse_impl {
+    ($(@$mut: ident,)? $ty: ident, $fn_name: ident, $iter_fn: ident) => {
+        impl $ty {
+            pub fn $fn_name<F>(&$($mut)? self, mut f: F)
+            where
+                F: for<'a> FnMut(&'a $($mut)? $ty),
+            {
+                fn _inner<F>(expr: &$($mut)? $ty, f: & mut F)
+                where
+                    F: for<'a> FnMut(&'a $($mut)? $ty),
+                {
+                    match expr {
+                        expr @ ($ty::Literal(_) | $ty::Dice(_))
+                        | $ty::Labeled(Labeled(box expr, _))
+                        | $ty::UnaryOperation(_, box expr)
+                        | $ty::SetOperation(box expr, _) => f(expr),
+
+                        $ty::BinaryOperation(lhs, _, rhs) => {
+                            _inner(lhs, f);
+                            _inner(rhs, f)
+                        }
+                        $ty::Set(exprs) => exprs.$iter_fn().for_each(|expr| _inner(expr, f)),
+                    }
+                }
+
+                _inner(self, &mut f);
+            }
+        }
+    };
+}
+
+traverse_impl!(@mut, DExpr, traverse_mut, iter_mut);
+traverse_impl!(DExpr, traverse, iter);
+
+traverse_impl!(@mut, ValTree, traverse_mut, iter_mut);
+traverse_impl!(ValTree, traverse, iter);
+
+// Other utilities
+
+macro_rules! etc {
+    ($ty: ident) => {
+        impl $ty {
+            pub fn modify_in_place(&mut self, func: impl FnOnce(Self) -> Self) {
+                replace_expr(self, func);
+            }
+
+            pub fn int_div(self, div: i32) -> Self {
+                Self::BinaryOperation(Box::new(self), Op::IntDiv, Box::new(div.into()))
+            }
+        }
+    };
+}
+
+etc!(ValTree);
+etc!(DExpr);

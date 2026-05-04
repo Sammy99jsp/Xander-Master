@@ -3,59 +3,19 @@ use std::{
         BTreeMap,
         btree_map::{Entry, IterMut},
     },
+    fmt::{Debug, Display},
     ops::{Add, AddAssign, Sub, SubAssign},
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 
-#[derive(Debug, Clone)]
+use crate::engine::{
+    game::combat::{Attack, Combatant},
+    io::roller::{DiceRollerError, Roller},
+};
+
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Damage<T> {
     parts: BTreeMap<DamageType, T>,
-}
-
-impl<T> Damage<T> {
-    pub const fn new() -> Self {
-        Self {
-            parts: BTreeMap::new(),
-        }
-    }
-
-    pub fn of(ty: DamageType, amount: T) -> Self {
-        Self {
-            parts: {
-                let mut parts = BTreeMap::new();
-                parts.insert(ty, amount);
-                parts
-            },
-        }
-    }
-
-    pub fn map<U, F>(&self, mut f: F) -> Damage<U>
-    where
-        F: for<'a> FnMut(&'a T) -> U,
-    {
-        Damage {
-            parts: self
-                .parts
-                .iter()
-                .map(|(ty, value)| (*ty, f(value)))
-                .collect(),
-        }
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self, ty: DamageType) -> Option<&mut T> {
-        self.parts.get_mut(&ty)
-    }
-
-    pub fn iter_mut(&mut self) -> IterMut<'_, DamageType, T> {
-        self.parts.iter_mut()
-    }
-}
-
-impl<T> Default for Damage<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[derive(
@@ -70,6 +30,7 @@ impl<T> Default for Damage<T> {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[rkyv(derive(PartialOrd, PartialEq, Ord, Eq))]
 pub enum DamageType {
     Acid,
     Bludgeoning,
@@ -86,15 +47,138 @@ pub enum DamageType {
     Thunder,
 }
 
+#[derive(Debug, Clone)]
+pub enum DamageSourceType {
+    Attack(Weak<Attack>),
+}
+
+#[derive(Debug)]
+pub struct DamageSource {
+    pub from: Option<Weak<Combatant>>,
+    pub ty: DamageSourceType,
+}
+
+impl<T> Damage<T> {
+    pub const fn new() -> Self {
+        Self {
+            parts: BTreeMap::new(),
+        }
+    }
+
+    pub fn types(&self) -> usize {
+        self.parts.len()
+    }
+
+    pub fn of(ty: DamageType, amount: T) -> Self {
+        Self {
+            parts: {
+                let mut parts = BTreeMap::new();
+                parts.insert(ty, amount);
+                parts
+            },
+        }
+    }
+
+    pub fn filter<F>(self, mut f: F) -> Damage<T>
+    where
+        F: for<'a> FnMut(DamageType, &'a T) -> bool,
+    {
+        Damage {
+            parts: self
+                .parts
+                .into_iter()
+                .filter(|(ty, expr)| f(*ty, expr))
+                .collect(),
+        }
+    }
+
+    pub fn filter_map<U, F>(self, mut f: F) -> Damage<U>
+    where
+        F: FnMut(DamageType, T) -> Option<U>,
+    {
+        Damage {
+            parts: self
+                .parts
+                .into_iter()
+                .filter_map(|(ty, expr)| f(ty, expr).map(|expr| (ty, expr)))
+                .collect(),
+        }
+    }
+
+    pub fn as_ref(&self) -> Damage<&'_ T> {
+        Damage {
+            parts: self.parts.iter().map(|(ty, dexpr)| (*ty, dexpr)).collect(),
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Damage<&'_ mut T> {
+        Damage {
+            parts: self
+                .parts
+                .iter_mut()
+                .map(|(ty, dexpr)| (*ty, dexpr))
+                .collect(),
+        }
+    }
+
+    pub fn map<U, F>(self, mut f: F) -> Damage<U>
+    where
+        F: FnMut(DamageType, T) -> U,
+    {
+        Damage {
+            parts: self
+                .parts
+                .into_iter()
+                .map(|(ty, value)| (ty, f(ty, value)))
+                .collect(),
+        }
+    }
+
+    pub fn for_each<F>(self, mut f: F)
+    where
+        F: FnMut(DamageType, T),
+    {
+        self.parts.into_iter().for_each(|(ty, expr)| f(ty, expr));
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self, ty: DamageType) -> Option<&mut T> {
+        self.parts.get_mut(&ty)
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<'_, DamageType, T> {
+        self.parts.iter_mut()
+    }
+}
+
+impl<T> IntoIterator for Damage<T> {
+    type Item = (DamageType, T);
+
+    type IntoIter = std::collections::btree_map::IntoIter<DamageType, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.parts.into_iter()
+    }
+}
+
+impl<T> Default for Damage<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Specialized methods
 
 impl Damage<d20::DExpr> {
-    pub async fn roll<R: d20::DiceRoller>(&self, roller: R) -> Damage<d20::ValTree> {
+    pub async fn roll<R>(&self, roller: &R) -> Result<Damage<d20::ValTree>, DiceRollerError>
+    where
+        R: Roller + ?Sized,
+    {
         let sum = {
             let mut iter = self.parts.iter();
 
             let Some(first) = iter.next() else {
-                return Damage::new();
+                return Ok(Damage::new());
             };
 
             let first = first.1.clone().label(Rc::new(*first.0));
@@ -104,9 +188,7 @@ impl Damage<d20::DExpr> {
             })
         };
 
-        let Ok(sum) = roller.roll(&sum) else { todo!() };
-
-        let Ok(mut sum) = sum.await else { todo!() };
+        let mut sum = roller.roll(&sum).await?;
 
         let mut output = Damage::new();
 
@@ -133,22 +215,32 @@ impl Damage<d20::DExpr> {
         let ty: DamageType = unsafe { *label.unwrap().downcast_rc().unwrap_unchecked() };
         output.parts.insert(ty, lhs);
 
-        output
+        Ok(output)
     }
 }
 
 // Math
 const ADD: fn(i32, i32) -> i32 = i32::saturating_add;
 
-impl Damage<i32> {
-    pub fn sum(&self) -> i32 {
-        self.parts.values().copied().fold(0, ADD)
+impl<T> Damage<T>
+where
+    T: Add<T, Output = T>,
+    T: Default + Clone,
+{
+    pub fn sum(&self) -> T {
+        if self.parts.is_empty() {
+            return T::default();
+        }
+
+        let mut iter = self.parts.iter();
+        let first = iter.next().unwrap().1.clone();
+        iter.fold(first, |a, (_, b)| a + b.clone())
     }
 }
 
 impl Damage<d20::ValTree> {
     pub fn subtotal(&self) -> Damage<i32> {
-        self.map(|expr| expr.total())
+        self.as_ref().map(|_, expr| expr.total())
     }
 
     pub fn total(&self) -> i32 {
@@ -200,6 +292,30 @@ where
 
     fn sub(self, rhs: Damage<Rhs>) -> Self::Output {
         self.in_place_binary_op(rhs, |lhs, rhs| *lhs -= rhs)
+    }
+}
+
+// FORMATTING
+impl Display for DamageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl<T: Display> Display for Damage<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_ref()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (k, v))| (i == self.types() - 1, k, v))
+            .try_for_each(|(last, ty, value)| {
+                write!(f, "{value} {ty}")?;
+                if !last {
+                    f.write_str(" + ")?;
+                }
+
+                Ok(())
+            })
     }
 }
 

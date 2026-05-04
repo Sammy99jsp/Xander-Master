@@ -1,4 +1,4 @@
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 use crate::engine::game::{
     creature::Creature,
@@ -19,33 +19,42 @@ pub struct AttackRoll {
     pub against: Weak<Creature>,
     pub ability: Ability,
     pub prof: Option<Box<dyn ProficiencyApplicationBase>>,
-    pub ac: AC,
 }
 
 impl D20Test for AttackRoll {
-    type Target = AC;
+    type Target = Ac;
     type Result = AttackRollResult;
     type Ambiguity = !;
     type PreRoll = events::PreAttackRollEvent;
     type PreResult = events::PreAttackRollResultEvent;
     type PostResult = events::PostAttackRollResultEvent;
 
-    fn base(&self) -> D20TestBase<'_, Self> {
-        D20TestBase {
-            ability: &self.ability,
-            prof: self.prof.as_deref(),
-            target: Ok(&self.ac),
+    fn base(&self) -> impl IntoFuture<Output = D20TestBase<'_, Self>> {
+        async {
+            D20TestBase {
+                ability: &self.ability,
+                prof: self.prof.as_deref(),
+                target: Ok({
+                    let against: Rc<Creature> = self.against.upgrade().unwrap();
+                    Ac(against.stats.ac.provide(d20::DExpr::ZERO).await)
+                }),
+            }
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AC(pub i32);
+#[derive(Debug, Clone)]
+pub struct Ac<T = d20::DExpr>(pub T);
 
-impl TargetNumber for AC {}
-impl From<AC> for i32 {
-    fn from(value: AC) -> Self {
-        value.0
+impl Default for Ac {
+    fn default() -> Self {
+        Self(d20::DExpr::ZERO)
+    }
+}
+
+impl TargetNumber for Ac {
+    fn get(&self) -> &d20::DExpr {
+        &self.0
     }
 }
 
@@ -57,15 +66,20 @@ pub enum AttackRollResult {
 
 impl TestResult<AttackRoll> for AttackRollResult {
     // TODO: Test this logic!
-    fn result_for(ac: &AC, roll_result: &d20::ValTree) -> AttackRollResult {
+    fn result_for(ac: &d20::ValTree, roll_result: &d20::ValTree) -> AttackRollResult {
         let is_hit = equals_or_exceeds(roll_result, ac);
 
         let raw_roll = Option::xor(
-            utils::find_labelled_val::<Advantage>(roll_result).map(d20::ValTree::total),
-            utils::find_labelled_val::<Disadvantage>(roll_result).map(d20::ValTree::total),
+            roll_result
+                .find_labelled_val::<Advantage>()
+                .map(d20::ValTree::total),
+            roll_result
+                .find_labelled_val::<Disadvantage>()
+                .map(d20::ValTree::total),
         )
         .unwrap_or_else(|| {
-            utils::find_labelled_val::<utils::TestRoll>(roll_result)
+            roll_result
+                .find_labelled_val::<utils::TestRoll>()
                 .map(d20::ValTree::total)
                 .expect("an Xd20 roll should be present on D20Test rolls")
         });
@@ -188,7 +202,7 @@ pub mod events {
     #[derive(Debug)]
     pub struct PostAttackRollResultEvent {
         pub attack_roll: AttackRoll,
-        pub roll_result: d20::ValTree,
+        pub attack_roll_result: d20::ValTree,
         pub result: super::AttackRollResult,
         pub attacker: Weak<Creature>,
     }
@@ -212,10 +226,31 @@ pub mod events {
         fn from(payload: PostResultPayload<AttackRoll>) -> Self {
             Self {
                 attack_roll: payload.test,
-                roll_result: payload.roll_result,
+                attack_roll_result: payload.roll_result,
                 result: payload.test_result,
                 attacker: payload.creature,
             }
+        }
+    }
+}
+
+pub mod provisos {
+    use std::{future::ready, ops::ControlFlow};
+
+    use xander_runtime::lived::provided::prelude::*;
+
+    #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+    pub struct SetAc(pub d20::DExpr);
+
+    register!(SetAc: dyn ProvisoBase<d20::DExpr>, register(Identity("SET_AC"), Lived(always), Archive, Deserialize));
+
+    impl ArchivedProvisoBase<d20::DExpr> for rkyv::Archived<SetAc> {}
+    impl Proviso<d20::DExpr> for SetAc {
+        const PRIORITY: usize = 0; // We're first!
+
+        fn provide(&self, t: &mut d20::DExpr) -> impl IntoFuture<Output = ControlFlow<()>> {
+            *t = self.0.clone();
+            ready(ControlFlow::Continue(()))
         }
     }
 }

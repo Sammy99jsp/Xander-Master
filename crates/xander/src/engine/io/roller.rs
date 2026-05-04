@@ -3,7 +3,7 @@ use smol::future::FutureExt;
 use thiserror::Error;
 use xander_runtime::futures::future::LocalBoxFuture;
 
-pub trait Roller: std::fmt::Debug {
+pub trait Roller: std::fmt::Debug + Send + Sync {
     fn roll<'b, 'a: 'b>(
         &'a self,
         epxr: &'b d20::DExpr,
@@ -21,7 +21,7 @@ pub enum DiceRollerError {
 
 impl<T> Roller for T
 where
-    T: DiceRoller + std::fmt::Debug,
+    T: DiceRoller + std::fmt::Debug + Send + Sync,
 {
     fn roll<'b, 'a: 'b>(
         &'a self,

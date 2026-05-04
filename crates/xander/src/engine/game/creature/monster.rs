@@ -110,6 +110,7 @@ impl Cr {
         use Cr::*;
         use IntegerCr as Int;
         match self {
+            // SAFETY: These are valid ProficiencyBonus values (2..=9)
             Eighth | Quarter | Half | Integer(Int(..=4)) => unsafe { ProficiencyBonus(2) },
             Integer(Int(5..=8)) => unsafe { ProficiencyBonus(3) },
             Integer(Int(9..=12)) => unsafe { ProficiencyBonus(4) },

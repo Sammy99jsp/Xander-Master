@@ -149,15 +149,20 @@ where
             .any(|p| p.local_id() == P::LOCAL_ID)
     }
 
-    #[expect(clippy::await_holding_refcell_ref)]
+    #[inline]
     pub async fn get(&self) -> T
     where
         T: Default,
     {
-        let mut t = T::default();
-        let iter = self.0.read();
+        self.provide(T::default()).await
+    }
 
-        for f in iter.iter() {
+    pub async fn provide(&self, starting_value: T) -> T {
+        let mut t = starting_value;
+        // NOTE: This does not account for provisos being added halfway through...
+        let provisos = self.0.read().clone();
+
+        for f in provisos {
             match f.provide(&mut t).await {
                 ControlFlow::Continue(()) => continue,
                 ControlFlow::Break(()) => break,

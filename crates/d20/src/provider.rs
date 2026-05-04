@@ -260,30 +260,40 @@ pub mod local_rng {
         rngs::StdRng,
     };
     use std::{
-        cell::RefCell,
         future::{Ready, ready},
-        sync::OnceLock,
+        sync::{Mutex, OnceLock},
     };
 
     use super::DiceRoller;
     use crate::{Dice, Int};
 
+    fn init_rng(seed: Option<u64>) -> StdRng {
+        match seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_rng(&mut rand::rng()),
+        }
+    }
+
     /// Thread-local RNG.
     ///
     /// Internally uses [rand::rngs::StdRng].
     #[derive(Debug)]
-    pub struct LocalRng(u64, OnceLock<RefCell<StdRng>>);
+    pub struct LocalRng(Option<u64>, OnceLock<Mutex<StdRng>>);
 
     impl LocalRng {
         /// Create a new [LocalRng] with a given seed.
-        pub const fn new(seed: u64) -> Self {
-            Self(seed, OnceLock::new())
+        pub const fn with_seed(seed: u64) -> Self {
+            Self(Some(seed), OnceLock::new())
+        }
+
+        pub fn new() -> Self {
+            Self(None, OnceLock::new())
         }
     }
 
     impl Default for LocalRng {
         fn default() -> Self {
-            Self::new(Default::default())
+            Self::new()
         }
     }
 
@@ -315,8 +325,9 @@ pub mod local_rng {
         ) -> Ready<Result<Vec<Vec<u32>>, Self::RollErr>> {
             let mut rng = self
                 .1
-                .get_or_init(|| RefCell::new(StdRng::seed_from_u64(self.0)))
-                .borrow_mut();
+                .get_or_init(|| Mutex::new(init_rng(self.0)))
+                .lock()
+                .expect("Not poisoned!");
 
             ready(Ok(dice
                 .into_iter()
@@ -357,7 +368,7 @@ pub mod local_rng {
         #[test]
         fn test_rng() {
             let four_d6_kl_2 = parse("2d6ro<3").unwrap();
-            let rng = LocalRng::new(367324233);
+            let rng = LocalRng::with_seed(367324233);
 
             let a = rng.roll(&four_d6_kl_2).unwrap().into_inner().unwrap();
             println!("{a:?}")

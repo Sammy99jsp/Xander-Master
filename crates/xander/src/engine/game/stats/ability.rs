@@ -105,6 +105,12 @@ impl From<AbilityModifier> for i32 {
     }
 }
 
+impl From<AbilityModifier> for DExpr {
+    fn from(value: AbilityModifier) -> Self {
+        DExpr::from(i32::from(value))
+    }
+}
+
 impl Default for AbilityModifier {
     fn default() -> Self {
         unsafe { Self(0) }

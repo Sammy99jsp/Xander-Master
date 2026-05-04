@@ -1,14 +1,16 @@
+use std::rc::Rc;
+
 use futures::future::LocalBoxFuture;
 
 use crate::flow::decision::Response;
 pub use crate::flow::decision::{Actor, Decision, IntoDecision};
 
 pub trait Interface: std::fmt::Debug {
-    type ActorState;
+    type ActorState: ?Sized;
     fn log<'a, 'b: 'a>(&'a self, displ: &'b dyn std::fmt::Display) -> LocalBoxFuture<'a, ()>;
     fn prompt_dyn<'a>(&'a self, decision: Decision) -> LocalBoxFuture<'a, Box<dyn Response>>;
 
-    fn state_for(&self, actor: Actor) -> &Self::ActorState;
+    fn state_for(&self, actor: Actor) -> Rc<Self::ActorState>;
 }
 
 pub trait InterfaceExt: Interface {
@@ -59,7 +61,7 @@ impl Interface for TestInterface {
         .boxed_local()
     }
 
-    fn state_for(&self, _: Actor) -> &Self::ActorState {
-        &()
+    fn state_for(&self, _: Actor) -> Rc<Self::ActorState> {
+        Rc::new(())
     }
 }

@@ -1,8 +1,10 @@
+use std::rc::Rc;
+
 use downcast_rs::{Downcast, impl_downcast};
 
 use crate::{
     dynx::{Id, Identity, IntoNamespace, Namespace},
-    flow::{Dispatcher, dispatcher::DispatchState, io::InterfaceExt},
+    flow::{Dispatcher, Interface, dispatcher::DispatchState, io::InterfaceExt},
     ui,
 };
 
@@ -106,8 +108,15 @@ impl Actor {
         self.0 as usize
     }
 
+    pub fn state<I>(&self, interface: &I) -> Rc<I::ActorState>
+    where
+        I: Interface,
+    {
+        interface.state_for(*self)
+    }
+
     /// # Safety
-    /// 
+    ///
     /// This [Actor] should be unique within an [super::Interface].
     #[doc(hidden)]
     pub const unsafe fn new(id: u32) -> Self {

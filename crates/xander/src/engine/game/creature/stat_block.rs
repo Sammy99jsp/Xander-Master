@@ -7,8 +7,14 @@ use rkyv::{
 use xander_runtime::lived::provided::Provided;
 
 use crate::engine::game::{
-    creature::{Me, proficiencies::Proficiencies},
+    creature::{
+        Me,
+        actions::{Actions, reaction::Reaction},
+        marker::Markers,
+        proficiencies::Proficiencies,
+    },
     health::Health,
+    measure::Feet,
     stats::{Ability, AbilityModifier, AbilityScore, proficiency::ProficiencyBonus},
 };
 
@@ -19,10 +25,15 @@ pub struct StatBlock {
     #[rkyv(omit_bounds)]
     pub me: Me,
     pub proficiency_bonus: Provided<ProficiencyBonus>,
+    pub speed: Provided<Feet>,
     pub proficiencies: Proficiencies,
     pub scores: AbilityScores,
     pub modifiers: AbilityModifiers,
     pub health: Health,
+    pub actions: Actions,
+    pub reaction: Reaction,
+    pub ac: Provided<d20::DExpr>,
+    pub markers: Markers,
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -36,7 +47,6 @@ pub struct AbilityScores {
 }
 
 /// Create a simple score with just the base ability score.
-#[cfg(test)]
 pub fn base_score(value: AbilityScore) -> Provided<AbilityScore> {
     let mut provided = Provided::new();
     provided.enroll_mut(provisos::BaseScore { value });

@@ -53,7 +53,7 @@ where
     }
 }
 
-#[Namespace("PROFICIENCY_APPLICATION" @ AppNS, derive(Archive, Serialize, Deserialize))]
+#[Namespace("PROFICIENCY_APPLICATION" @ AppNS, derive(Archive, Serialize, Deserialize, CheckBytes))]
 pub trait ProficiencyApplicationBase: Downcast + Debug {
     fn boxed_clone(&self) -> Box<dyn ProficiencyApplicationBase>;
 }

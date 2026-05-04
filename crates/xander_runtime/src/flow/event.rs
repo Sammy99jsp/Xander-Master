@@ -1,4 +1,4 @@
-use std::{future::ready, pin::Pin};
+use std::{future::ready, marker::PhantomData, pin::Pin};
 
 use downcast_rs::{Downcast, impl_downcast};
 use dynx::{IntoNamespace, Namespace};
@@ -26,6 +26,7 @@ pub trait Event<S: ?Sized>: Sized + Identity<Parent = dyn EventBase<S>> + EventB
         }
     }
 
+    #[must_use]
     fn handle(self) -> impl IntoFuture<Output = Outcome<S, Self>>
     where
         S: DispatchState,
@@ -134,6 +135,17 @@ pub trait EventHandler<S: ?Sized>: EventHandlerBase<S> {
         &'s self,
         event: &'e mut Self::Event,
     ) -> impl IntoFuture<Output = ()> + 's;
+
+    fn listen(self) -> impl IntoFuture<Output = ()>
+    where
+        Self: Sized + 'static,
+        S: DispatchState,
+    {
+        async {
+            let state = Dispatcher::<S>::local().await;
+            state.listen(self);
+        }
+    }
 }
 
 pub trait EventHandlerBase<S: ?Sized>: Lived + std::fmt::Debug {
@@ -158,6 +170,7 @@ where
 }
 
 /// Result after an event has been handled by the [Dispatcher] and appropriate [EventHandler]s.
+#[must_use]
 pub enum Outcome<S: ?Sized, E>
 where
     E: Event<S>,
@@ -209,12 +222,15 @@ where
     }
 }
 
+#[repr(transparent)]
+pub struct NeverResolved<S, Cancelled>(Cancelled, PhantomData<S>);
+
 impl<S, E> std::ops::Try for Outcome<S, E>
 where
     E: Event<S>,
 {
     type Output = E::Resolved;
-    type Residual = E::Cancelled;
+    type Residual = Outcome<S, E>;
 
     fn from_output(output: Self::Output) -> Self {
         Outcome::Resolved(output)
@@ -223,18 +239,33 @@ where
     fn branch(self) -> std::ops::ControlFlow<Self::Residual, Self::Output> {
         match self {
             Outcome::Resolved(resolved) => std::ops::ControlFlow::Continue(resolved),
-            Outcome::Cancelled(cancelled) => std::ops::ControlFlow::Break(cancelled),
+            Outcome::Cancelled(cancelled) => {
+                std::ops::ControlFlow::Break(Outcome::Cancelled(cancelled))
+            }
         }
     }
 }
 
-impl<S, E, Cancelled> std::ops::FromResidual for Outcome<S, E>
+impl<S, Source, Target> std::ops::FromResidual<Outcome<S, Source>> for Outcome<S, Target>
 where
-    E: Event<S, Cancelled = Cancelled>,
+    Source: Event<S>,
+    Target: Event<S, Cancelled = Source::Cancelled>,
 {
-    fn from_residual(residual: <Self as std::ops::Try>::Residual) -> Self {
-        Outcome::Cancelled(residual)
+    fn from_residual(residual: Outcome<S, Source>) -> Self {
+        match residual {
+            Outcome::Resolved(_) => unreachable!("This is only called when breaking!"),
+            Outcome::Cancelled(cancelled) => Outcome::Cancelled(cancelled),
+        }
     }
+}
+
+pub struct Test<S, E: Event<S>>(E::Cancelled, PhantomData<(S, E)>);
+
+impl<S, E> std::ops::Residual<E::Resolved> for Outcome<S, E>
+where
+    E: Event<S>,
+{
+    type TryType = Outcome<S, E>;
 }
 
 #[cfg(test)]

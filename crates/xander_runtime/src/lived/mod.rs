@@ -160,6 +160,9 @@ macro_rules! dependently_alive {
             }
         }
     };
+    ($ty: path, $field: tt) => {
+        $crate::dependently_alive!($ty => $field);
+    };
 }
 
 #[doc(hidden)]

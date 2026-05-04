@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{any::Any, rc::Rc};
 
 use xander_runtime::flow::{
     Dispatcher as FlowDispatcher,
@@ -8,8 +8,11 @@ use xander_runtime::flow::{
 };
 
 use crate::engine::{
-    game::{combat::Combat, flow::EventHandlers},
-    io::Interface,
+    game::{
+        combat::{Combat, arena::Arena},
+        flow::EventHandlers,
+    },
+    io::{DynInterface, Interface},
 };
 
 pub mod combat;
@@ -24,19 +27,19 @@ pub type Dispatcher = FlowDispatcher<Game>;
 
 #[derive(Debug)]
 pub struct Game {
-    pub combat: Combat,
+    pub combat: Rc<Combat>,
     pub dispatcher: Rc<Dispatcher>,
     pub interface: Interface,
     pub event_handlers: EventHandlers,
 }
 
 impl Game {
-    pub fn new<Io>(base: Io) -> Rc<Self>
+    pub fn new<Io>(base: Io, arena: Arena) -> Rc<Self>
     where
         Io: FlowInterface + 'static,
     {
         Rc::new_cyclic(|this| Self {
-            combat: Combat::new(),
+            combat: Rc::new(Combat::new(arena)),
             // SAFETY: Using Rc::new_cyclic to ensure lifetimes satisfy the Dispatcher.
             dispatcher: unsafe { Dispatcher::new(this.clone()) },
             interface: Interface::new(base),
@@ -65,6 +68,10 @@ impl DispatchState for Game {
     {
         self.event_handlers.listen(handler);
     }
+
+    fn update(&self) -> impl IntoFuture<Output = Result<(), Box<dyn Any>>> {
+        self.interface.update()
+    }
 }
 
 #[cfg(test)]
@@ -72,23 +79,29 @@ mod tests {
     use xander_runtime::flow::io::TestInterface;
 
     use crate::engine::game::{
-        Game, creature,
+        Game,
+        combat::arena::Arena,
+        creature,
         stats::skill::{Skill, profs::SkillProficiency},
     };
 
     #[test]
     fn new_game() {
-        let game = Game::new(TestInterface);
+        let game = Game::new(TestInterface, Arena::test());
 
-        let creature = creature::test_creature();
-        creature.stats.proficiencies.insert(SkillProficiency {
-            skill: Skill::Acrobatics,
-        });
+        let combatant = creature::test_combatant();
+        combatant
+            .creature
+            .stats
+            .proficiencies
+            .insert(SkillProficiency {
+                skill: Skill::Acrobatics,
+            });
 
-        let pinned = smol::block_on(smol::future::poll_once(
-            game.dispatcher
-                .dispatch(async { creature.stats.proficiency_bonus.get().await }),
-        ));
+        let pinned =
+            smol::block_on(smol::future::poll_once(game.dispatcher.dispatch(async {
+                combatant.creature.stats.proficiency_bonus.get().await
+            })));
         println!("{pinned:?}")
     }
 }

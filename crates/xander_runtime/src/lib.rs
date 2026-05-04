@@ -1,5 +1,6 @@
 #![feature(
     try_trait_v2,
+    try_trait_v2_residual,
     debug_closure_helpers,
     never_type,
     local_waker,
@@ -14,6 +15,7 @@ pub mod macros;
 pub mod ui;
 
 pub use futures;
+pub use smol;
 
 pub use lived::Lived;
 

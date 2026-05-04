@@ -4,9 +4,14 @@
     int_roundings,
     debug_closure_helpers,
     never_type,
-    box_patterns
+    box_patterns,
+    unwrap_infallible,
+    ptr_metadata,
 )]
 
 pub mod engine;
 pub mod prelude;
 pub mod utils;
+
+pub use d20;
+pub use xander_runtime as runtime;

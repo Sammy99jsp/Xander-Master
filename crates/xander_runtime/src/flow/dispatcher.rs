@@ -1,4 +1,6 @@
 use std::{
+    any::Any,
+    future::ready,
     marker::PhantomData,
     pin::Pin,
     rc::{Rc, Weak},
@@ -18,6 +20,10 @@ pub trait DispatchState {
     fn listen<H>(&self, handler: H)
     where
         H: EventHandler<Self> + 'static;
+
+    fn update(&self) -> impl IntoFuture<Output = Result<(), Box<dyn Any>>> {
+        ready(Ok(()))
+    }
 }
 
 #[derive(Debug)]
@@ -137,8 +143,10 @@ where
         //         *waker is always initialized, and waker != null
         //         as it is from an Rc<DispatchWaker>.
         let waker = unsafe { waker.as_ref().unwrap_unchecked() };
+        let state: &State = waker.dispatcher.state();
+        state.update();
 
-        Poll::Ready(waker.dispatcher.state())
+        Poll::Ready(state)
     }
 }
 

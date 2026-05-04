@@ -1,12 +1,12 @@
-use std::rc::Rc;
+use std::{future::ready, rc::Rc};
 
 use crate::{
     engine::game::{
-        creature::Creature,
+        combat::Combatant,
         stats::{
             ability::Ability,
             d20_test::{
-                AmbiguousDC, D20Test, DC, PostResultPayload, PreResultPayload, PreRollPayload,
+                AmbiguousDC, D20Test, Dc, PostResultPayload, PreResultPayload, PreRollPayload,
                 TestResult, equals_or_exceeds,
             },
             proficiency::ProficiencyApplicationBase,
@@ -21,29 +21,29 @@ use super::D20TestBase;
 pub struct Save {
     pub ability: Ability,
     pub prof: Option<Box<dyn ProficiencyApplicationBase>>,
-    pub dc: Option<DC>,
+    pub dc: Option<Dc>,
 }
 
-impl Creature {
+impl Combatant {
     pub async fn save(self: &Rc<Self>, save: Save) -> Outcome<events::PostResultSaveEvent> {
         save.perform(self).await
     }
 }
 
 impl D20Test for Save {
-    type Target = DC;
+    type Target = Dc;
     type Ambiguity = AmbiguousDC;
     type Result = SaveResult;
     type PreRoll = events::PreRollSaveEvent;
     type PreResult = events::PreResultSaveEvent;
     type PostResult = events::PostResultSaveEvent;
 
-    fn base(&self) -> D20TestBase<'_, Self> {
-        D20TestBase {
+    fn base(&self) -> impl IntoFuture<Output = D20TestBase<'_, Self>> {
+        ready(D20TestBase {
             ability: &self.ability,
             prof: self.prof.as_deref(),
-            target: self.dc.as_ref().ok_or(AmbiguousDC),
-        }
+            target: self.dc.clone().ok_or(AmbiguousDC),
+        })
     }
 }
 
@@ -54,7 +54,7 @@ pub enum SaveResult {
 }
 
 impl TestResult<Save> for SaveResult {
-    fn result_for(dc: &DC, roll_result: &d20::ValTree) -> SaveResult {
+    fn result_for(dc: &d20::ValTree, roll_result: &d20::ValTree) -> SaveResult {
         match equals_or_exceeds(roll_result, dc) {
             true => SaveResult::Pass,
             false => SaveResult::Fail,
