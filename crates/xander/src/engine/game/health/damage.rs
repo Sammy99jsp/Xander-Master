@@ -151,6 +151,30 @@ impl<T> Damage<T> {
     }
 }
 
+impl<T> FromIterator<(DamageType, T)> for Damage<T>
+where
+    T: AddAssign,
+{
+    fn from_iter<Iter>(iter: Iter) -> Self
+    where
+        Iter: IntoIterator<Item = (DamageType, T)>,
+    {
+        let mut out = Self::new();
+        for (ty, value) in iter.into_iter() {
+            match out.parts.entry(ty) {
+                Entry::Vacant(empty) => {
+                    empty.insert(value);
+                }
+                Entry::Occupied(mut occupied) => {
+                    *occupied.get_mut() += value;
+                }
+            }
+        }
+
+        out
+    }
+}
+
 impl<T> IntoIterator for Damage<T> {
     type Item = (DamageType, T);
 

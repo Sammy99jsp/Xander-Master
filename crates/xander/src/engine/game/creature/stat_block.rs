@@ -110,6 +110,39 @@ impl AbilityModifiers {
     }
 }
 
+pub mod defaults {
+    use xander_runtime::lived::Provided;
+
+    use crate::engine::game::{
+        creature::{
+            Me, actions::reaction::Reaction, marker::Markers, proficiencies::Proficiencies, provisos::CreatureProficiencyBonus, stat_block::AbilityModifiers
+        },
+        stats::proficiency::ProficiencyBonus,
+    };
+
+    pub fn proficiency_bonus(me: Me) -> Provided<ProficiencyBonus> {
+        let mut bonus = Provided::new();
+        bonus.enroll_mut(CreatureProficiencyBonus { me });
+        bonus
+    }
+
+    pub fn proficiencies() -> Proficiencies {
+        Proficiencies::new()
+    }
+
+    pub fn modifiers(me: Me) -> AbilityModifiers {
+        AbilityModifiers::new(me)
+    }
+
+    pub fn reaction(me: Me) -> Reaction {
+        Reaction::new(me)
+    }
+
+    pub fn markers() -> Markers {
+        Markers::new()
+    }
+}
+
 pub mod provisos {
     use crate::engine::game::{
         creature::Me,

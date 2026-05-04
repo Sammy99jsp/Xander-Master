@@ -1,11 +1,11 @@
 from typing import Generator, Literal as L
 
 from xander import Attack
-from xander.xander import Dash, Disengage, Dodge, Turn, Reaction
+from xander.xander import Dash, Disengage, Dodge, Turn, Reaction, GameEnd
 
 
 Direction = L[0, 1, 2, 3, 4, 5, 6, 7]
-AgentCoroutine = Generator[None, Turn | Reaction, None]
+AgentCoroutine = Generator[None, Turn | Reaction | GameEnd, None]
 Action = Dash | Disengage | Dodge | Attack
 
 

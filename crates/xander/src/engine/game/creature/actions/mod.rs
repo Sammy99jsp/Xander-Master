@@ -5,10 +5,11 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use rkyv::with::Identity;
 use thiserror::Error;
 use xander_runtime::{
     dynx::cells::InnerValue,
-    lived::{LivedList, Provided},
+    lived::{LivedCell, LivedList, Provided},
 };
 
 use crate::engine::{
@@ -79,8 +80,15 @@ impl Attacks {
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(serialize_bounds(__S: rkyv::ser::Writer + rkyv::ser::Sharing + rkyv::ser::Allocator, __S::Error: rkyv::rancor::Source))]
+#[rkyv(deserialize_bounds(__D: rkyv::de::Pooling, __D::Error: rkyv::rancor::Source))]
+#[rkyv(bytecheck(bounds(__C: rkyv::validation::ArchiveContext + rkyv::validation::SharedContext, __C::Error: rkyv::rancor::Source)))]
 pub struct AttacksLeft {
     me: Me,
+
+    #[rkyv(with = Identity, omit_bounds)]
+    current_turn: LivedCell<Weak<Turn>>,
+
     #[rkyv(with = InnerValue<u32>)]
     count: Cell<u32>,
 }
@@ -106,31 +114,37 @@ pub enum AttackUseError {
 }
 
 impl AttacksLeft {
-    pub fn can_attack(&self) -> bool {
-        self.count.get() > 0
+    pub async fn can_attack(&self, slot: &Timeslot) -> bool {
+        if !self.current_turn.is_inhabited() {
+            self.count.set(0);
+        }
+
+        match slot {
+            Timeslot::Turn(turn) => {
+                self.current_turn.set(Rc::downgrade(turn));
+                self.count.get() < self.me.stats.actions.attacks.max_attacks.get().await
+            }
+            Timeslot::Reaction(_) => true,
+        }
     }
 
-    pub fn use_attack(&self) -> Result<(), AttackUseError> {
+    pub async fn use_attack(&self, slot: &Timeslot) -> Result<(), AttackUseError> {
         // Check if we have already used up all of our attacks.
-        if !self.can_attack() {
+        if !self.can_attack(slot).await {
             return Err(AttackUseError::OutOfAttacks);
         }
 
         // Update the count:
-        self.count.update(|attacks| attacks.saturating_sub(1));
+        self.count.update(|attacks| attacks + 1);
 
         Ok(())
-    }
-
-    pub async fn reset(&self, _: &Rc<Turn>) {
-        self.count
-            .set(self.me.stats.actions.attacks.max_attacks.get().await)
     }
 
     pub fn new(me: Me) -> Self {
         Self {
             me,
             count: Cell::new(DEFAULT_NUM_ATTACKS),
+            current_turn: LivedCell::empty(),
         }
     }
 }

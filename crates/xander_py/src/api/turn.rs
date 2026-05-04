@@ -25,7 +25,7 @@ mod rs {
     pub use xander::engine::game::{
         Game,
         combat::{
-            Combatant, Timeslot,
+            Combatant,
             action::{Action, Attacking},
             turn::{self, Turn},
         },
@@ -145,12 +145,7 @@ impl Turn {
         let target = attack.target.upgrade_or_expired("Combat")?;
         let attack = attack.upgrade()?;
 
-        let me = turn.combatant.upgrade().unwrap();
-
-        let res = run_future(
-            self.game()?,
-            attack.attack(&rs::Timeslot::Turn(turn), &me, &target),
-        );
+        let res = run_future(self.game()?, turn.attack(attack, &target));
         match res {
             Ok(report) => AttackReport {
                 report: unsafe { UnsafePythonEscape::new(report) },
@@ -217,7 +212,7 @@ impl Movement {
         let turn = self.upgrade()?;
         let game: Rc<rs::Game> = self.game()?;
 
-        let me: Rc<rs::Combatant> = turn.combatant.upgrade().unwrap();
+        let me: Rc<rs::Combatant> = turn.me.upgrade().unwrap();
         let rs::Feet(speed) = run_future(game, me.creature.stats.speed.get());
         Ok(speed)
     }

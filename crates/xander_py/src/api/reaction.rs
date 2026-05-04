@@ -18,10 +18,7 @@ use crate::{
 };
 
 mod rs {
-    pub use xander::engine::game::{
-        Game,
-        combat::{Combatant, Reaction, Timeslot, reaction::AttackOfOpportunity},
-    };
+    pub use xander::engine::game::{Game, combat::reaction::AttackOfOpportunity};
 }
 
 #[pyclass]
@@ -109,11 +106,7 @@ impl AttackOfOpportunity {
         let aoo = self.upgrade()?;
         let attack = attack.upgrade()?;
 
-        let me: Rc<rs::Combatant> = aoo.me.upgrade().unwrap();
-        let target: Rc<rs::Combatant> = aoo.target.upgrade().unwrap();
-        let slot = rs::Timeslot::Reaction(rs::Reaction::AttackOfOpportunity(aoo));
-
-        let res = run_future(game, attack.attack(&slot, &me, &target));
+        let res = run_future(game, aoo.attack(&attack));
         match res {
             Ok(report) => AttackReport {
                 report: unsafe { UnsafePythonEscape::new(report) },

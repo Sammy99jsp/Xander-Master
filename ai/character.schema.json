@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Creature",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/CreatureKind"
+    },
+    "name": {
+      "type": "string"
+    },
+    "size": {
+      "$ref": "#/$defs/CreatureSizeInner"
+    },
+    "stats": {
+      "$ref": "#/$defs/Stats"
+    }
+  },
+  "required": [
+    "name",
+    "size",
+    "kind",
+    "stats"
+  ],
+  "$defs": {
+    "Ability": {
+      "type": "string",
+      "enum": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ]
+    },
+    "AbilityScore": {
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0
+    },
+    "AbilityScores": {
+      "type": "object",
+      "properties": {
+        "cha": {
+          "$ref": "#/$defs/AbilityScore"
+        },
+        "con": {
+          "$ref": "#/$defs/AbilityScore"
+        },
+        "dex": {
+          "$ref": "#/$defs/AbilityScore"
+        },
+        "int": {
+          "$ref": "#/$defs/AbilityScore"
+        },
+        "str": {
+          "$ref": "#/$defs/AbilityScore"
+        },
+        "wis": {
+          "$ref": "#/$defs/AbilityScore"
+        }
+      },
+      "required": [
+        "str",
+        "dex",
+        "con",
+        "int",
+        "wis",
+        "cha"
+      ]
+    },
+    "Actions": {
+      "type": "object",
+      "properties": {
+        "attacks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attack"
+          }
+        }
+      },
+      "required": [
+        "attacks"
+      ]
+    },
+    "Attack": {
+      "type": "object",
+      "properties": {
+        "ability": {
+          "$ref": "#/$defs/Ability"
+        },
+        "hit": {
+          "$ref": "#/$defs/DamageDice"
+        },
+        "kind": {
+          "$ref": "#/$defs/AttackKind"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "hit",
+        "ability"
+      ]
+    },
+    "AttackKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "reach": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "default": null,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "melee"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ranged"
+            }
+          },
+          "anyOf": [
+            {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              },
+              "maxItems": 2,
+              "minItems": 2
+            }
+          ],
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "CrRaw": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        }
+      ]
+    },
+    "CreatureKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "monster": {
+              "$ref": "#/$defs/Monster"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "monster"
+          ]
+        }
+      ]
+    },
+    "CreatureSizeInner": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "tiny",
+            "small",
+            "medium",
+            "large"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gargantuan": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/GargantuanDimension"
+                },
+                {
+                  "$ref": "#/$defs/GargantuanDimension"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "gargantuan"
+          ]
+        }
+      ]
+    },
+    "DExpr": {
+      "type": "string",
+      "examples": [
+        "d6"
+      ]
+    },
+    "DamageDice": {
+      "type": "object",
+      "properties": {
+        "acid": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "bludgeoning": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "cold": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "fire": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "force": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "lighting": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "necrotic": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "piercing": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "poison": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "psychic": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "radiant": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "slashing": {
+          "$ref": "#/$defs/DExpr"
+        },
+        "thunder": {
+          "$ref": "#/$defs/DExpr"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DamageType": {
+      "type": "string",
+      "enum": [
+        "acid",
+        "bludgeoning",
+        "cold",
+        "fire",
+        "force",
+        "lighting",
+        "necrotic",
+        "piercing",
+        "poison",
+        "psychic",
+        "radiant",
+        "slashing",
+        "thunder"
+      ]
+    },
+    "GargantuanDimension": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 20
+    },
+    "Health": {
+      "type": "object",
+      "properties": {
+        "immunities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DamageType"
+          }
+        },
+        "max_hp": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        },
+        "resistances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DamageType"
+          }
+        },
+        "vulnerabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DamageType"
+          }
+        }
+      },
+      "required": [
+        "max_hp"
+      ]
+    },
+    "Monster": {
+      "type": "object",
+      "properties": {
+        "cr": {
+          "$ref": "#/$defs/CrRaw",
+          "examples": [
+            2,
+            "1/4"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/MonsterType"
+        }
+      },
+      "required": [
+        "cr",
+        "type"
+      ]
+    },
+    "MonsterType": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "Stats": {
+      "type": "object",
+      "properties": {
+        "ac": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "actions": {
+          "$ref": "#/$defs/Actions"
+        },
+        "health": {
+          "$ref": "#/$defs/Health"
+        },
+        "scores": {
+          "$ref": "#/$defs/AbilityScores"
+        },
+        "speed": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "speed",
+        "scores",
+        "health",
+        "actions",
+        "ac"
+      ]
+    }
+  }
+}

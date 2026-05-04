@@ -17,6 +17,9 @@ xander_runtime = { path = "../xander_runtime" }
 dynx = {path = "../dynx"}
 const_format = { version = "0.2.35", features = ["fmt"] }
 inventory = "0.3.22"
+serde = { version = "1.0.228", features = ["serde_derive"] }
+serde_json = "1.0.149"
+schemars = "1.2.1"
 
 
 [package.metadata.docs.rs]

@@ -12,7 +12,7 @@ use xander::{
     engine::{
         game::{
             Game,
-            combat::{reaction::AttackOfOpportunity, turn::Turn},
+            combat::{reaction::AttackOfOpportunity, turn::Turn, win::GameEndReport},
         },
         io::{Agent, DynInterface, roller::Roller},
     },
@@ -71,7 +71,16 @@ impl Agent for PythonAgent {
         async move {
             let stop_signal = StopSignal::default();
 
-            while !stop_signal.load(Ordering::Relaxed) {
+            while !stop_signal.load(Ordering::Relaxed)
+                && !turn
+                    .upgrade()
+                    .unwrap()
+                    .me
+                    .upgrade()
+                    .unwrap()
+                    .creature
+                    .is_dead()
+            {
                 python_send(
                     self,
                     api::turn::Turn {
@@ -112,6 +121,10 @@ impl Agent for PythonAgent {
             Ok(())
         }
         .boxed_local()
+    }
+
+    fn game_end(&self, report: GameEndReport) -> LocalBoxFuture<'_, Result<(), Box<dyn Any>>> {
+        async move { python_send(self, api::game::GameEnd(report)) }.boxed_local()
     }
 }
 

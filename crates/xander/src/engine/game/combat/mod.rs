@@ -3,6 +3,7 @@ pub mod arena;
 pub mod reaction;
 pub mod turn;
 pub mod utils;
+pub mod win;
 
 use std::{
     any::Any,
@@ -23,18 +24,22 @@ use crate::engine::game::{
         arena::{Arena, Position},
         reaction::AttackOfOpportunity,
         turn::events::OpportunityAttackHandler,
+        win::WinCondition,
     },
     creature::Creature,
     measure::{
         Feet,
         time::{Rounds, Turns},
     },
+    stats::d20_test::{Check, Dc},
 };
 
 pub use action::attack::{self, Attack};
 
 pub use reaction::Reaction;
 pub use turn::Turn;
+
+use super::stats::Ability;
 
 #[derive(Debug, Clone)]
 pub enum Timeslot {
@@ -55,6 +60,11 @@ pub struct Combat {
     current_turn: RefCell<Option<Rc<Turn>>>,
     #[rkyv(with = InnerValue<Vec<Rc<Combatant>>>)]
     initiative: RefCell<Vec<Rc<Combatant>>>,
+
+    #[rkyv(with = InnerValue<usize>)]
+    pub creature_id: Cell<usize>,
+
+    pub win_condition: WinCondition,
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -113,11 +123,12 @@ impl Default for CombatClock {
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Combatant {
     pub creature: Rc<Creature>,
-    pub initiative_score: i32,
     pub actor: Actor,
-
     #[rkyv(with = InnerValue<Position>)]
     pub position: Cell<Position>,
+
+    #[rkyv(with = InnerValue<i32>)]
+    pub initiative_score: Cell<i32>,
 }
 
 impl Combatant {
@@ -143,6 +154,21 @@ impl Combatant {
 
         Ok(())
     }
+
+    async fn roll_for_initiative(self: &Rc<Self>) {
+        // TODO: Do the work necessary to label this check with an Initiative marker.
+        let ev = self
+            .check(Check {
+                ability: Ability::Dexterity,
+                prof: None,
+                dc: Some(Dc(d20::DExpr::from(100))),
+            })
+            .await
+            .into_result()
+            .unwrap();
+
+        self.initiative_score.set(ev.roll_result.total());
+    }
 }
 
 #[derive(Debug, Error)]
@@ -159,22 +185,37 @@ impl Combat {
             initiative: RefCell::new(Vec::new()),
             clock: CombatClock::new(),
             current_turn: RefCell::new(None),
+            creature_id: Cell::new(0),
+            win_condition: WinCondition::FreeForAll,
         }
     }
 
     #[must_use = "You must check the result of this operation."]
-    pub fn enroll(&self, combatant: Combatant) -> Result<Weak<Combatant>, EnrollCombatantError> {
+    pub async fn enroll(
+        &self,
+        creature: Rc<Creature>,
+        actor: Actor,
+        position: Position,
+    ) -> Result<Weak<Combatant>, EnrollCombatantError> {
+        let combatant = Rc::new(Combatant {
+            creature,
+            actor,
+            position: Cell::new(position),
+            initiative_score: Cell::new(0),
+        });
+
+        combatant.roll_for_initiative().await;
+
         let Some(sq) = self.arena.at(combatant.position.get()) else {
             return Err(EnrollCombatantError::OutOfBounds);
         };
 
         let mut initiative = self.initiative.borrow_mut();
 
-        let combatant = Rc::new(combatant);
         let ret = Rc::downgrade(&combatant);
 
         initiative.push(combatant);
-        initiative.sort_by_cached_key(|c| -c.initiative_score);
+        initiative.sort_by_cached_key(|c| -c.initiative_score.get());
 
         sq.add_occupant(ret.clone());
 
@@ -214,8 +255,31 @@ impl Combat {
         }
     }
 
-    pub fn termination_condition(&self) -> bool {
-        self.len_members() <= 1
+    pub async fn termination_condition(&self, game: &Game) -> Result<bool, Box<dyn Any>> {
+        if self.len_members() <= 1 {
+            return Ok(true);
+        }
+
+        let winners = self.win_condition.has_happened(self);
+
+        let Some(winners) = winners else {
+            return Ok(false);
+        };
+
+        let mut losers = self.initiative();
+        losers.retain(|loser| !winners.iter().any(|winner| Rc::ptr_eq(winner, loser)));
+
+        for winner in winners {
+            let agent = winner.actor.state(&game.interface);
+            agent.game_end(win::GameEndReport { won: true }).await?;
+        }
+
+        for loser in losers {
+            let agent = loser.actor.state(&game.interface);
+            agent.game_end(win::GameEndReport { won: false }).await?;
+        }
+
+        Ok(true)
     }
 
     pub fn start<'s, 'g>(
@@ -225,14 +289,21 @@ impl Combat {
     where
         's: 'g,
     {
+        if self.started.get() {
+            panic!("Do not start the game twice!");
+        }
+
         game.listen(OpportunityAttackHandler);
         game.dispatcher
             .dispatch(async {
                 self.started.set(true);
 
                 let max_iter: Turns = Turns(100_000);
-                while self.clock.turns() < max_iter && !self.termination_condition() {
+                while self.clock.turns() < max_iter {
                     game.update().await?;
+                    if self.termination_condition(game).await? {
+                        break;
+                    }
 
                     self.clock.tick(self.len_members());
                     // println!("{}", self.arena.display_debug());

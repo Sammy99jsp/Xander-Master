@@ -8,7 +8,7 @@ use std::{
 use xander_runtime::futures::{FutureExt, future::LocalBoxFuture};
 
 use crate::engine::{
-    game::combat::{reaction::AttackOfOpportunity, turn::Turn},
+    game::combat::{reaction::AttackOfOpportunity, turn::Turn, win::GameEndReport},
     io::roller::Roller,
 };
 
@@ -24,6 +24,9 @@ pub trait Agent: std::fmt::Debug {
         &self,
         attack: Rc<AttackOfOpportunity>,
     ) -> LocalBoxFuture<'_, Result<(), Box<dyn Any>>>;
+
+    #[must_use]
+    fn game_end(&self, report: GameEndReport) -> LocalBoxFuture<'_, Result<(), Box<dyn Any>>>;
 }
 
 #[derive(Debug)]
@@ -53,6 +56,10 @@ impl Agent for NoopAgent {
         &self,
         _: Rc<AttackOfOpportunity>,
     ) -> LocalBoxFuture<'_, Result<(), Box<dyn Any>>> {
+        ready(Ok(())).boxed_local()
+    }
+
+    fn game_end(&self, _: GameEndReport) -> LocalBoxFuture<'_, Result<(), Box<dyn Any>>> {
         ready(Ok(())).boxed_local()
     }
 }

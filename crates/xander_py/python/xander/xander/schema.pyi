@@ -1,0 +1,9 @@
+from io import TextIOWrapper
+from typing import overload
+
+@overload
+def creature() -> str: ...
+@overload
+def creature(path: str) -> None: ...
+@overload
+def creature(file: TextIOWrapper) -> None: ...

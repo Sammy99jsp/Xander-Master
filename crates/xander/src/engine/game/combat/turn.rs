@@ -88,7 +88,7 @@ impl Add<Direction> for Position {
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Turn {
     pub arena: Weak<Arena>,
-    pub combatant: Weak<Combatant>,
+    pub me: Weak<Combatant>,
     pub movement: Movement,
     #[rkyv(with = InnerValue<Option<ActionType>>)]
     pub action: Cell<Option<ActionType>>,
@@ -108,28 +108,16 @@ pub enum CannotMove {
 
 impl Turn {
     pub async fn new(combat: &Combat, combatant: &Rc<Combatant>) -> Rc<Self> {
-        let turn = Rc::new(Self {
+        Rc::new(Self {
             arena: Rc::downgrade(&combat.arena),
-            combatant: Rc::downgrade(combatant),
+            me: Rc::downgrade(combatant),
             movement: Movement::new(),
             action: Cell::new(None),
-        });
-
-        // Fix this weirdness later.
-        combatant
-            .creature
-            .stats
-            .actions
-            .attacks
-            .left
-            .reset(&turn)
-            .await;
-
-        turn
+        })
     }
 
     pub async fn move_in(&self, direction: Direction) -> Result<(), CannotMove> {
-        let me = self.combatant.upgrade().unwrap();
+        let me = self.me.upgrade().unwrap();
         if self.movement.used_up(&me).await {
             return Err(CannotMove::NoMovementLeft);
         }
@@ -190,7 +178,7 @@ impl Turn {
     }
 
     pub async fn available_movement_directions(&self) -> Vec<Option<Direction>> {
-        let me = self.combatant.upgrade().unwrap();
+        let me = self.me.upgrade().unwrap();
         if self.movement.used_up(&me).await {
             return vec![None; 8];
         }
@@ -214,7 +202,7 @@ impl Turn {
     }
 
     pub async fn movement_left(&self) -> Feet {
-        let me: Rc<Combatant> = self.combatant.upgrade().unwrap();
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
 
         let used = self.movement.used.get();
         let speed = me.creature.stats.speed.get().await;
@@ -259,18 +247,28 @@ impl Turn {
         let trans = self.try_use_action(ActionType::Attack)?;
 
         let slot = Timeslot::Turn(self.clone());
-        let me = self.combatant.upgrade().unwrap();
+        let me = self.me.upgrade().unwrap();
         if let Err(err) = attack.is_available(&slot, &me, target) {
             trans.cancel();
             return Err(err);
         }
 
-        if let Err(err) = me.creature.stats.actions.attacks.left.use_attack() {
+        if let Err(err) = me
+            .creature
+            .stats
+            .actions
+            .attacks
+            .left
+            .use_attack(&slot)
+            .await
+        {
+            println!("B");
             trans.cancel();
             return Err(err);
         }
 
-        match attack.attack(&slot, &me, target).await {
+        let res = attack.attack(&slot, &me, target).await;
+        match res {
             Err(err) => {
                 trans.cancel();
                 Err(err.into())
@@ -281,7 +279,7 @@ impl Turn {
 
     pub async fn dash(self: &Rc<Self>) -> Result<(), NoActionLeft> {
         let _ = self.try_use_action(ActionType::Dash)?;
-        let me: Rc<Combatant> = self.combatant.upgrade().unwrap();
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
 
         let dashing = Dashing {
             turn: Rc::downgrade(self),
@@ -296,7 +294,7 @@ impl Turn {
 
     pub async fn dodge(self: &Rc<Self>) -> Result<(), NoActionLeft> {
         let _ = self.try_use_action(ActionType::Dodge)?;
-        let me: Rc<Combatant> = self.combatant.upgrade().unwrap();
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
 
         let dodging = Dodging {
             me: Rc::downgrade(&me.creature),
@@ -312,7 +310,7 @@ impl Turn {
 
     pub async fn disengage(self: &Rc<Self>) -> Result<(), NoActionLeft> {
         let _ = self.try_use_action(ActionType::Disengage)?;
-        let me: Rc<Combatant> = self.combatant.upgrade().unwrap();
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
 
         let disengaging = Disengaging {
             turn: Rc::downgrade(self),
@@ -472,7 +470,7 @@ mod tests {
     fn test_transaction() {
         let turn = Turn {
             arena: Weak::new(),
-            combatant: Weak::new(),
+            me: Weak::new(),
             movement: super::Movement {
                 used: Cell::default(),
             },
@@ -499,7 +497,7 @@ mod tests {
     fn test_transaction_cancelled() {
         let turn = Turn {
             arena: Weak::new(),
-            combatant: Weak::new(),
+            me: Weak::new(),
             movement: super::Movement {
                 used: Cell::default(),
             },

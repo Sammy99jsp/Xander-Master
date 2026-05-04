@@ -5,3 +5,4 @@ pub mod turn;
 pub mod utils;
 pub mod dice;
 pub mod health;
+pub mod schema;

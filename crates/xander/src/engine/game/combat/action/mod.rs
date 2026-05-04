@@ -59,8 +59,8 @@ impl Action {
     pub async fn available_for_turn(turn: &Rc<Turn>) -> Vec<Availability<Action>> {
         let slot = &super::Timeslot::Turn(turn.clone());
         let game = Dispatcher::local().await;
-        let me_weak = turn.combatant.clone();
-        let me: Rc<Combatant> = turn.combatant.upgrade().unwrap();
+        let me_weak = turn.me.clone();
+        let me: Rc<Combatant> = turn.me.upgrade().unwrap();
 
         let non_attacks =
             [Action::Dash, Action::Disengage, Action::Dodge].map(|action| {
@@ -69,6 +69,20 @@ impl Action {
                     false => Availability::unavailable(action),
                 }
             });
+
+        let can_attack = match turn.action.get() {
+            None => true,
+            Some(ActionType::Attack) => {
+                me.creature
+                    .stats
+                    .actions
+                    .attacks
+                    .left
+                    .can_attack(slot)
+                    .await
+            }
+            _ => false,
+        };
 
         let attacks = game
             .combat
@@ -92,7 +106,8 @@ impl Action {
                         attack,
                     })
                 })
-            });
+            })
+            .map(|availability| availability.and(|_| can_attack));
 
         non_attacks.into_iter().chain(attacks).collect()
     }

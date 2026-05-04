@@ -12,6 +12,7 @@
 pub mod engine;
 pub mod prelude;
 pub mod utils;
+pub mod content;
 
 pub use d20;
 pub use xander_runtime as runtime;

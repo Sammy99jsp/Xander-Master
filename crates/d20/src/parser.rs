@@ -169,6 +169,26 @@ impl crate::BinaryOperator {
     }
 }
 
+impl TryFrom<&'_ str> for crate::DExpr {
+    type Error = EmptyErr;
+
+    fn try_from(value: &'_ str) -> Result<Self, Self::Error> {
+        let parser = crate::DExpr::parser();
+        parser
+            .parse(value)
+            .into_result()
+            .map_err(|_| EmptyErr::default())
+    }
+}
+
+impl TryFrom<String> for crate::DExpr {
+    type Error = EmptyErr;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        (value.as_str()).try_into()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use chumsky::Parser;
@@ -177,7 +197,6 @@ mod test {
     #[test]
     fn a() {
         let parser = crate::DExpr::parser();
-
-        let _ = parser.parse("1+d8+4d4p<1").into_result();
+        parser.parse("1+d8+4d4p<1").into_result().unwrap();
     }
 }

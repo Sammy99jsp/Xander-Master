@@ -132,10 +132,10 @@ pub enum CrParseError {
     Bounds(OutOfBoundsError),
 }
 
-impl TryFrom<String> for Cr {
+impl TryFrom<&'_ str> for Cr {
     type Error = CrParseError;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
             "1/8" => Ok(Self::Eighth),
             "1/4" => Ok(Self::Quarter),
             "1/2" => Ok(Self::Half),
@@ -150,6 +150,12 @@ impl TryFrom<String> for Cr {
         }
 
         // TODO: Add unit test for this.
+    }
+}
+impl TryFrom<String> for Cr {
+    type Error = CrParseError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Cr::try_from(value.as_str())
     }
 }
 

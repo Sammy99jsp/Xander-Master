@@ -65,7 +65,7 @@ impl Attack {
         self.base.can_be_reaction(self)
     }
 
-    pub async fn attack(
+    pub(in crate::engine::game::combat) async fn attack(
         self: &Rc<Self>,
         slot: &Timeslot,
         me: &Rc<Combatant>,
@@ -142,12 +142,16 @@ impl AttackBase for SetMonsterAttack {
     fn is_available(
         &self,
         attack: &Rc<Attack>,
-        _: &Timeslot,
+        slot: &Timeslot,
         me: &Rc<Combatant>,
         target: &Rc<Combatant>,
     ) -> Result<(), AttackUseError> {
         if !attack.range().within(me.distance_between(target)) {
             return Err(AttackUseError::OutOfRange);
+        }
+
+        if matches!(slot, Timeslot::Reaction(_)) && matches!(&attack.kind, AttackKind::Ranged { .. }) {
+            return Err(AttackUseError::OutOfTurn);
         }
 
         Ok(())

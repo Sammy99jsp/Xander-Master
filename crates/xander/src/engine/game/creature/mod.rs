@@ -9,7 +9,6 @@ pub mod stat_block;
 
 use crate::engine::game::{
     combat::{Combatant, arena::Position, attack::test_attack},
-    creature::marker::Markers,
     measure::Squares,
     stats::d20_test::attack_roll::provisos::SetAc,
 };
@@ -35,7 +34,7 @@ pub struct Creature {
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-pub struct CreatureId(u32);
+pub struct CreatureId(pub u32);
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub enum CreatureKind {
@@ -138,7 +137,7 @@ pub fn test_combatant() -> Rc<Combatant> {
 
     Rc::new(Combatant {
         creature,
-        initiative_score: 0,
+        initiative_score: Cell::new(0),
         actor: Actor::GM,
         position: Cell::new(Position {
             x: Squares(0),
@@ -150,15 +149,10 @@ pub fn test_combatant() -> Rc<Combatant> {
 pub fn test_creature() -> Rc<Creature> {
     use self::{
         monster::{Cr, Monster},
-        proficiencies::Proficiencies,
-        provisos::CreatureProficiencyBonus,
-        stat_block::{AbilityModifiers, AbilityScores, base_score as base_score_},
+        stat_block::{AbilityScores, base_score as base_score_},
     };
     use crate::engine::game::{
-        creature::{
-            actions::{Actions, reaction::Reaction},
-            monster::MonsterType,
-        },
+        creature::{actions::Actions, monster::MonsterType},
         health::Health,
         stats::AbilityScore,
     };
@@ -192,12 +186,8 @@ pub fn test_creature() -> Rc<Creature> {
         }),
         stats: StatBlock {
             me: me.clone(),
-            proficiency_bonus: {
-                let mut bonus = Provided::new();
-                bonus.enroll_mut(CreatureProficiencyBonus { me: me.clone() });
-                bonus
-            },
-            proficiencies: Proficiencies::new(),
+            proficiency_bonus: stat_block::defaults::proficiency_bonus(me.clone()),
+            proficiencies: stat_block::defaults::proficiencies(),
             scores: AbilityScores {
                 str: base_score(9),
                 dex: base_score(6),
@@ -206,7 +196,7 @@ pub fn test_creature() -> Rc<Creature> {
                 wis: base_score(6),
                 cha: base_score(12),
             },
-            modifiers: AbilityModifiers::new(me.clone()),
+            modifiers: stat_block::defaults::modifiers(me.clone()),
             health: Health::with_set_max(me.clone(), 7).unwrap(),
             actions: {
                 let mut attacks = Actions::new(me.clone());
@@ -217,7 +207,7 @@ pub fn test_creature() -> Rc<Creature> {
                     .push(Rc::new(test_attack("Club")));
                 attacks
             },
-            reaction: Reaction::new(me.clone()),
+            reaction: stat_block::defaults::reaction(me),
             speed: {
                 let mut provided = Provided::new();
                 provided.enroll_mut(provisos::SetSpeed { speed: 30 });
@@ -228,7 +218,7 @@ pub fn test_creature() -> Rc<Creature> {
                 provided.enroll_mut(SetAc(d20::DExpr::from(6)));
                 provided
             },
-            markers: Markers::new(),
+            markers: stat_block::defaults::markers(),
         },
     })
 }

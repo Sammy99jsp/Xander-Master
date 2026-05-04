@@ -1,7 +1,10 @@
 use std::rc::{Rc, Weak};
 
-use crate::engine::game::combat::{
-    Combatant, action::Attack, arena::Position, utils::Availability,
+use crate::engine::game::{
+    combat::{
+        Combatant, action::Attack, arena::Position, attack::AttackReport, utils::Availability,
+    },
+    creature::actions::AttackUseError,
 };
 
 use super::Timeslot;
@@ -49,6 +52,17 @@ impl AttackOfOpportunity {
                 })
             })
             .collect::<Vec<_>>()
+    }
+
+    pub async fn attack(
+        self: &Rc<Self>,
+        attack: &Rc<Attack>,
+    ) -> Result<AttackReport, AttackUseError> {
+        let slot = Timeslot::Reaction(Reaction::AttackOfOpportunity(self.clone()));
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
+        let target = self.target.upgrade().unwrap();
+        attack.is_available(&slot, &me, &target)?;
+        Ok(attack.attack(&slot, &me, &target).await?)
     }
 }
 
