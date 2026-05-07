@@ -134,30 +134,24 @@
         {
           "type": "object",
           "properties": {
+            "range": {
+              "$ref": "#/$defs/Range",
+              "examples": [
+                30,
+                [
+                  30,
+                  240
+                ]
+              ]
+            },
             "type": {
               "type": "string",
               "const": "ranged"
             }
           },
-          "anyOf": [
-            {
-              "type": "integer",
-              "format": "uint32",
-              "minimum": 0
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "uint32",
-                "minimum": 0
-              },
-              "maxItems": 2,
-              "minItems": 2
-            }
-          ],
           "required": [
-            "type"
+            "type",
+            "range"
           ]
         }
       ]
@@ -369,6 +363,25 @@
       },
       "required": [
         "type"
+      ]
+    },
+    "Range": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
       ]
     },
     "Stats": {

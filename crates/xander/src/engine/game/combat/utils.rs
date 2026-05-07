@@ -35,7 +35,7 @@ impl NextTurn {
             .cmp(&combat.clock.current_turn_order());
 
         match (round_cmp, turn_order_cmp) {
-            (Less, _) | (Equal, Less) => unreachable!("Combat clock only goes forward"),
+            (Less, _) | (Equal, Less) => false,
 
             // Not our next turn yet.
             (Equal, Equal | Greater) | (Greater, Less) => false,

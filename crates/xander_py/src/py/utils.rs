@@ -50,6 +50,12 @@ impl<T: ?Sized> Deref for PythonOwnedRc<T> {
 
 pub struct PythonWeak<T: ?Sized>(RcWeak<T>);
 
+impl<T: ?Sized> PythonWeak<T> {
+    pub fn as_inner(&self) -> RcWeak<T> {
+        self.0.clone()
+    }
+}
+
 impl<T: ?Sized> Clone for PythonWeak<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -65,6 +71,12 @@ impl<T: ?Sized> PythonWeak<T> {
 impl<T: ?Sized> PythonOwnedRc<T> {
     pub unsafe fn new(rc: Rc<T>) -> Self {
         Self(rc)
+    }
+    pub unsafe fn new_cyclic(f: impl for<'a> FnOnce(&'a RcWeak<T>) -> T) -> Self
+    where
+        T: Sized,
+    {
+        Self(Rc::new_cyclic(f))
     }
 }
 

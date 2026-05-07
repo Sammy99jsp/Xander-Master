@@ -4,8 +4,9 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     api::{
-        game::Combatant,
+        dice::ValTree,
         health::{Damage, DamageDice},
+        turn::Combatant,
     },
     py::utils::{OrExpired, PythonWeak, UnsafePythonEscape, run_future},
 };
@@ -152,6 +153,15 @@ impl AttackReport {
         match &self.report.result {
             rs::AttackResult::Hit { .. } => true,
             rs::AttackResult::Miss => false,
+        }
+    }
+
+    #[getter]
+    pub fn to_hit(&self) -> ValTree {
+        unsafe {
+            ValTree(UnsafePythonEscape::new(
+                self.report.attack_roll_result.clone(),
+            ))
         }
     }
 }

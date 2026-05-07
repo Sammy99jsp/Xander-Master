@@ -8,7 +8,7 @@ pub mod size;
 pub mod stat_block;
 
 use crate::engine::game::{
-    combat::{Combatant, arena::Position, attack::test_attack},
+    combat::{Combatant, affiliation::Affiliation, arena::Position, attack::test_attack},
     measure::Squares,
     stats::d20_test::attack_roll::provisos::SetAc,
 };
@@ -143,6 +143,7 @@ pub fn test_combatant() -> Rc<Combatant> {
             x: Squares(0),
             y: Squares(0),
         }),
+        affiliation: Affiliation::default(),
     })
 }
 

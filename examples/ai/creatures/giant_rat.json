@@ -1,0 +1,42 @@
+{
+    "$schema": "./creature.schema.json",
+    "name": "Giant Rat",
+    "kind": {
+        "monster": {
+            "cr": "1",
+            "type": {
+                "type": "BEAST"
+            }
+        }
+    },
+    "size": "small",
+    "stats": {
+        "ac": 13,
+        "health": {
+            "max_hp": 7
+        },
+        "speed": 30,
+        "scores": {
+            "str": 7,
+            "dex": 16,
+            "con": 11,
+            "int": 2,
+            "wis": 10,
+            "cha": 4
+        },
+        "actions": {
+            "attacks": [
+                {
+                    "name": "Bite",
+                    "ability": "dexterity",
+                    "hit": {
+                        "piercing": "1d4"
+                    },
+                    "kind": {
+                        "type": "melee"
+                    }
+                }
+            ]
+        }
+    }
+}

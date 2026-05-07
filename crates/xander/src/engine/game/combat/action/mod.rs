@@ -8,8 +8,8 @@ use std::rc::{Rc, Weak};
 use thiserror::Error;
 
 use crate::engine::game::{
-    Dispatcher,
-    combat::{Combatant, Turn, utils::Availability},
+    Dispatcher, Game,
+    combat::{Combatant, Reaction, Timeslot, utils::Availability},
 };
 
 pub use attack::Attack;
@@ -43,6 +43,9 @@ pub enum Action {
     // Magic,
 }
 
+pub const SUPPORTED_NON_ATTACK_ACTIONS: [Action; 3] =
+    [Action::Dash, Action::Disengage, Action::Dodge];
+
 impl PartialEq<ActionType> for Action {
     fn eq(&self, other: &ActionType) -> bool {
         matches!(
@@ -55,24 +58,59 @@ impl PartialEq<ActionType> for Action {
     }
 }
 
+fn attacks(
+    game: &Game,
+    me: &Rc<Combatant>,
+    slot: &Timeslot,
+) -> impl Iterator<Item = Availability<Action>> {
+    let me_weak = Rc::downgrade(me);
+    game.combat
+        .initiative()
+        .into_iter()
+        .filter(move |target| !Rc::ptr_eq(me, target))
+        .flat_map(|target| {
+            me.creature
+                .stats
+                .actions
+                .attacks
+                .attacks(slot, me, &target)
+                .into_iter()
+                .map(move |attack| (Rc::downgrade(&target), target.creature.is_dead(), attack))
+        })
+        .map(move |(target, is_dead, attack)| {
+            attack
+                .map(|attack| {
+                    Action::Attack(Attacking {
+                        me: me_weak.clone(),
+                        target,
+                        attack,
+                    })
+                })
+                .and(|_| !is_dead)
+        })
+}
+
 impl Action {
-    pub async fn available_for_turn(turn: &Rc<Turn>) -> Vec<Availability<Action>> {
-        let slot = &super::Timeslot::Turn(turn.clone());
+    pub async fn actions_for(me: &Rc<Combatant>) -> impl Iterator<Item = Action> {
         let game = Dispatcher::local().await;
-        let me_weak = turn.me.clone();
-        let me: Rc<Combatant> = turn.me.upgrade().unwrap();
 
-        let non_attacks =
-            [Action::Dash, Action::Disengage, Action::Dodge].map(|action| {
-                match turn.action.get().is_none() {
-                    true => Availability::available(action),
-                    false => Availability::unavailable(action),
-                }
-            });
+        SUPPORTED_NON_ATTACK_ACTIONS
+            .into_iter()
+            .chain(attacks(game, me, &Timeslot::Any).map(|a| a.value()))
+    }
 
-        let can_attack = match turn.action.get() {
-            None => true,
-            Some(ActionType::Attack) => {
+    pub async fn available_for_slot(slot: &Timeslot) -> Vec<Availability<Action>> {
+        let me: Rc<Combatant> = slot.me().upgrade().unwrap();
+        let game = Dispatcher::local().await;
+
+        let non_attacks = SUPPORTED_NON_ATTACK_ACTIONS.map(|action| match slot {
+            Timeslot::Any => Availability::available(action),
+            Timeslot::Turn(turn) if turn.action.get().is_none() => Availability::available(action),
+            Timeslot::Reaction(_) | Timeslot::Turn(_) => Availability::unavailable(action),
+        });
+
+        let can_attack = match slot {
+            slot @ Timeslot::Reaction(Reaction::AttackOfOpportunity(_)) => {
                 me.creature
                     .stats
                     .actions
@@ -81,33 +119,21 @@ impl Action {
                     .can_attack(slot)
                     .await
             }
-            _ => false,
-        };
-
-        let attacks = game
-            .combat
-            .initiative()
-            .into_iter()
-            .filter(|target| !Rc::ptr_eq(&me, target) && !target.creature.is_dead())
-            .flat_map(|target| {
+            slot @ Timeslot::Turn(turn) if let Some(ActionType::Attack) = turn.action.get() => {
                 me.creature
                     .stats
                     .actions
                     .attacks
-                    .attacks(slot, &me, &target)
-                    .into_iter()
-                    .map(move |attack| (Rc::downgrade(&target), attack))
-            })
-            .map(|(target, attack)| {
-                attack.map(|attack| {
-                    Action::Attack(Attacking {
-                        me: me_weak.clone(),
-                        target,
-                        attack,
-                    })
-                })
-            })
-            .map(|availability| availability.and(|_| can_attack));
+                    .left
+                    .can_attack(slot)
+                    .await
+            }
+            Timeslot::Turn(turn) if turn.action.get().is_none() => true,
+            Timeslot::Turn(_) => false,
+            Timeslot::Any => true,
+        };
+
+        let attacks = attacks(game, &me, slot).map(|availability| availability.and(|_| can_attack));
 
         non_attacks.into_iter().chain(attacks).collect()
     }

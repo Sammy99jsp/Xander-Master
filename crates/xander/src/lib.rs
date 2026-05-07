@@ -16,3 +16,4 @@ pub mod content;
 
 pub use d20;
 pub use xander_runtime as runtime;
+pub use serde;

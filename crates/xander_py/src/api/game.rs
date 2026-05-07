@@ -1,39 +1,40 @@
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    sync::{Arc, atomic::AtomicBool},
+};
 
+use numpy::{IntoPyArray, ndarray};
 use pyo3::{
-    exceptions::{PyIOError, PyValueError},
+    exceptions::{PyTypeError, PyValueError},
     prelude::*,
-    types::PyTuple,
 };
 use xander::{
-    d20::rand::Rng,
-    engine::{
-        game::combat::arena::Dimensions,
-        io::roller::Roller,
-        json::{self, serde_json},
-    },
+    d20::rand::{self, Rng, SeedableRng},
+    engine::{game::combat::arena::Dimensions, io::roller::Roller},
     runtime::smol,
 };
 
-use crate::py::{
-    coroutine::{Coroutine, StoredCoroutine},
-    io::{PythonAgent, PythonInterface},
-    utils::{MaybeStrong, OrExpired, PyFile, PythonOwnedRc, PythonWeak, run_future},
+use crate::{
+    api::turn::{Combatant, View},
+    py::{
+        coroutine::{Coroutine, StoredCoroutine},
+        io::{PythonAgent, PythonInterface},
+        utils::{
+            MaybeStrong, OrExpired, PythonOwnedRc, PythonWeak, UnsafePythonEscape, run_future,
+        },
+    },
 };
 
 mod rs {
-    pub use xander::engine::{
-        game::{
-            Game,
-            combat::{
-                Combatant,
-                arena::{Arena, Position},
-                win::GameEndReport,
-            },
-            creature::Creature,
-            measure::{FEET_PER_SQUARE, Squares},
+    pub use xander::engine::game::{
+        Game,
+        combat::{
+            Combatant,
+            arena::{Arena, Position},
+            win::GameEndReport,
         },
-        io::Interface,
+        creature::Creature,
+        measure::{FEET_PER_SQUARE, Feet, Squares},
     };
 }
 
@@ -81,11 +82,15 @@ impl Arena {
         format!("Arena({} x {})", self.width, self.height)
     }
 
-    pub fn random_square(&self) -> Position {
+    #[pyo3(signature = (*, seed = None))]
+    pub fn random_square(&self, seed: Option<u64>) -> Position {
         let w = self.width / rs::FEET_PER_SQUARE;
         let h = self.height / rs::FEET_PER_SQUARE;
 
-        let mut rng = xander::d20::rand::rng();
+        let mut rng = match seed {
+            Some(seed) => rand::rngs::Xoshiro128PlusPlus::seed_from_u64(seed),
+            None => rand::rngs::Xoshiro128PlusPlus::from_rng(&mut rand::rng()),
+        };
 
         Position {
             x: rng.next_u32() % w,
@@ -108,49 +113,24 @@ pub struct Game {
 impl Game {
     #[new]
     #[allow(clippy::new_without_default)]
-    pub fn new(arena: Arena) -> Self {
-        Self {
+    #[pyo3(signature = (arena, debug = false))]
+    pub fn new(arena: Arena, debug: bool) -> PyResult<Self> {
+        Ok(Self {
             game: unsafe {
-                PythonOwnedRc::new(rs::Game::new(
-                    rs::Interface::new(PythonInterface {}),
-                    rs::Arena::new(Dimensions {
-                        width: rs::Squares(arena.width / rs::FEET_PER_SQUARE),
-                        height: rs::Squares(arena.height / rs::FEET_PER_SQUARE),
-                    }),
-                ))
+                PythonOwnedRc::new({
+                    rs::Game::new(
+                        PythonInterface { debug },
+                        rs::Arena::new_feet(Dimensions {
+                            width: rs::Feet(arena.width),
+                            height: rs::Feet(arena.height),
+                        })
+                        .ok_or_else(|| {
+                            PyValueError::new_err("Arena dimensions must be multiples of five")
+                        })?,
+                    )
+                })
             },
-        }
-    }
-
-    #[pyo3(signature = (*args, name=None))]
-    pub fn load_creature_json<'py>(
-        &self,
-        args: &Bound<'py, PyTuple>,
-        name: Option<String>,
-    ) -> PyResult<Creature> {
-        if args.len() == 0 {
-            return Err(PyValueError::new_err(
-                "Expected either a file-like or file path",
-            ));
-        }
-
-        let file = PyFile::from_str_or_file(&args.get_item(0)?, false)?;
-        let mut raw = serde_json::from_reader::<_, json::creature::Creature>(file.0)
-            .map_err(|err| PyIOError::new_err(err.to_string()))?;
-
-        // Customize name here
-        if let Some(name) = name {
-            raw.name = name;
-        }
-
-        let creature = self.game.combat.load_raw_character(raw);
-
-        unsafe {
-            Ok(Creature {
-                creature: MaybeStrong::strong(creature),
-                game: PythonWeak::new(PythonOwnedRc::downgrade(&self.game)),
-            })
-        }
+        })
     }
 
     pub fn join<'py>(
@@ -158,7 +138,7 @@ impl Game {
         mut agent: PyRefMut<'py, Agent>,
         mut creature: PyRefMut<'py, Creature>,
         position: PyRef<'py, Position>,
-    ) -> PyResult<Combatant> {
+    ) -> PyResult<Me> {
         let creature = creature.creature.take_strong().unwrap();
         let game = PythonOwnedRc::into_inner(self.game.clone());
         let actor = self.game.interface.add_actor(PythonAgent {
@@ -166,6 +146,7 @@ impl Game {
             name: agent.name.clone(),
             coroutine: agent.coroutine.clone_ref(agent.py()),
             game: PythonOwnedRc::downgrade(&self.game),
+            stop_signal: Arc::new(AtomicBool::new(false)),
         });
 
         let combatant = run_future(
@@ -181,8 +162,8 @@ impl Game {
         )
         .map_err(|err| PyValueError::new_err(err.to_string()))?;
 
-        Ok(Combatant {
-            combatant: unsafe { PythonWeak::new(combatant) },
+        Ok(Me {
+            me: unsafe { PythonWeak::new(combatant) },
             game: unsafe { PythonWeak::new(PythonOwnedRc::downgrade(&self.game)) },
         })
     }
@@ -190,13 +171,18 @@ impl Game {
     pub fn start<'py>(&mut self, py: Python<'py>) -> PyResult<()> {
         py.detach(|| {
             let result = smol::block_on(self.game.combat.start(&self.game).into_future());
-            if let Err(err) = result
-                && let Ok(err) = err.downcast::<PyErr>()
-            {
-                return Err(*err);
+            match &result {
+                Ok(()) => return Ok(()),
+                Err(err) if err.is::<PyErr>() => (),
+                Err(err) => {
+                    panic!("Cannot deal with this error of type: {}", err.type_name())
+                }
             }
 
-            Ok(())
+            Err(result
+                .unwrap_err()
+                .downcast::<PyErr>()
+                .unwrap_or_else(|_| panic!("Already checked!")))
         })
     }
 }
@@ -213,15 +199,33 @@ impl Agent {
     #[new]
     #[pyo3(signature = (name, coroutine, *, seed = None))]
     #[allow(clippy::new_without_default)]
-    pub fn new(name: String, coroutine: Bound<'_, PyAny>, seed: Option<u64>) -> PyResult<Self> {
+    pub fn new<'py>(
+        name: String,
+        coroutine: Bound<'py, PyAny>,
+        seed: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Self> {
         let coroutine = Coroutine::new(coroutine)?.unbind();
 
         let roller = match seed {
-            Some(seed) => xander::d20::provider::local_rng::LocalRng::with_seed(seed),
+            Some(seed) => match seed.as_borrowed() {
+                s if let Ok(random) = s.extract::<String>()
+                    && random == "random" =>
+                {
+                    xander::d20::provider::local_rng::LocalRng::new()
+                }
+                s if let Ok(int) = s.extract::<u64>() => {
+                    xander::d20::provider::local_rng::LocalRng::with_seed(int)
+                }
+                _ => {
+                    return Err(PyTypeError::new_err(
+                        "Expected either \"random\" or a positive integer for `seed` argument.",
+                    ));
+                }
+            },
             None => {
                 // TODO: Convert this to a more formal Python warning or something...
                 eprintln!(
-                    "[Xander] You are using a random seed for RNG.\n\tIt is advised to instead use a fixed seed  with `Agent(..., seed=<int>)` for reproducibility."
+                    "[Xander] You are using a random seed for RNG by default.\n\tIt is advised to instead use a fixed seed with `Agent(..., seed=<int>)` for reproducibility, or explicitly use `Agent(..., seed=\"random\")`."
                 );
 
                 xander::d20::provider::local_rng::LocalRng::new()
@@ -237,43 +241,100 @@ impl Agent {
 }
 
 #[pyclass]
-pub struct Combatant {
-    pub combatant: PythonWeak<rs::Combatant>,
+pub struct Me {
+    pub me: PythonWeak<rs::Combatant>,
     pub game: PythonWeak<rs::Game>,
 }
 
-impl Combatant {
+impl Me {
     pub fn upgrade(&self) -> PyResult<Rc<rs::Combatant>> {
-        self.combatant.upgrade_or_expired("Combatant")
+        self.me.upgrade_or_expired("Combatant")
     }
 }
 
 #[pymethods]
-impl Combatant {
+impl Me {
     #[getter]
     pub fn name(&self) -> PyResult<String> {
         Ok(self.upgrade()?.creature.name.clone())
     }
 
     #[getter]
-    pub fn current_hp(&self) -> PyResult<u32> {
-        Ok(self.upgrade()?.creature.stats.health.current())
+    pub fn hp<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let combatant = self.upgrade()?;
+        let game = self.game.upgrade_or_expired("Combat")?;
+
+        let current_hp = combatant.creature.stats.health.current();
+        let max_hp = run_future(game, combatant.creature.stats.health.max_hp.get());
+        Ok(ndarray::Array1::from_iter([current_hp as f32, max_hp as f32]).into_pyarray(py))
     }
 
     #[getter]
-    pub fn max_hp(&self) -> PyResult<u32> {
+    pub fn position<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let pos = self.upgrade()?.position.get();
+        Ok(ndarray::Array1::from_iter([pos.x.0 as f32, pos.y.0 as f32]).into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn view(&self) -> PyResult<View> {
         let game = self.game.upgrade_or_expired("Game")?;
-        let max_hp = run_future(game, self.upgrade()?.creature.stats.health.max_hp.get());
-        Ok(max_hp)
+        let me = self.me.upgrade_or_expired("Combat")?;
+        let view = run_future(game, me.view());
+
+        Ok(View {
+            game: self.game.clone(),
+            me: unsafe { PythonWeak::new(view.me.clone()) },
+            allies: unsafe {
+                UnsafePythonEscape::new(
+                    view.allies.into_iter().map(|c| Rc::downgrade(&c)).collect(),
+                )
+            },
+            enemies: unsafe {
+                UnsafePythonEscape::new(
+                    view.enemies
+                        .into_iter()
+                        .map(|c| Rc::downgrade(&c))
+                        .collect(),
+                )
+            },
+        })
     }
 
     #[pyo3(name = "__repr__")]
     pub fn repr(&self) -> PyResult<String> {
         let name = self.name()?;
-        let current_hp = self.current_hp()?;
-        let max_hp = self.current_hp()?;
+        let combatant = self.upgrade()?;
+        let game = self.game.upgrade_or_expired("Combat")?;
+
+        let current_hp = combatant.creature.stats.health.current();
+        let max_hp = run_future(game, combatant.creature.stats.health.max_hp.get());
 
         Ok(format!("{name} <{current_hp}/{max_hp}>"))
+    }
+
+    pub fn distance_from<'py>(&self, combatant: PyRef<'py, Combatant>) -> PyResult<u32> {
+        let me = self.upgrade()?;
+        let combatant = combatant.upgrade()?;
+
+        Ok(me.distance_to(&combatant).0)
+    }
+
+    pub fn displacement_from<'py>(
+        &self,
+        py: Python<'py>,
+        combatant: PyRef<'py, Combatant>,
+    ) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let me = self.upgrade()?;
+        let combatant = combatant.upgrade()?;
+
+        let displacement = me.position.get().displacement_to(combatant.position.get());
+        Ok(
+            ndarray::Array1::<f32>::from_vec(vec![
+                displacement.x.0 as f32,
+                displacement.y.0 as f32,
+            ])
+            .into_pyarray(py),
+        )
     }
 
     #[getter]
@@ -283,24 +344,43 @@ impl Combatant {
             game: self.game.clone(),
         })
     }
+
+    #[getter]
+    pub fn len_actions(&self) -> PyResult<usize> {
+        let game = self.game.upgrade_or_expired("Game")?;
+        let me = self.upgrade()?;
+        let iter = run_future(game, me.actions());
+        Ok(iter.count())
+    }
 }
 
 #[pyclass]
 pub struct Creature {
-    creature: MaybeStrong<rs::Creature>,
-    game: PythonWeak<rs::Game>,
+    pub creature: MaybeStrong<rs::Creature>,
+    pub game: PythonWeak<rs::Game>,
 }
 
 #[pymethods]
 impl Creature {}
 
 #[pyclass]
-pub struct GameEnd(pub rs::GameEndReport);
+pub struct GameEnd {
+    pub report: UnsafePythonEscape<rs::GameEndReport>,
+    pub game: PythonWeak<rs::Game>,
+}
 
 #[pymethods]
 impl GameEnd {
     #[getter]
     pub fn won(&self) -> bool {
-        self.0.won
+        self.report.won
+    }
+
+    #[getter]
+    pub fn me(&self) -> Me {
+        Me {
+            me: unsafe { PythonWeak::new(self.report.me.clone()) },
+            game: self.game.clone(),
+        }
     }
 }

@@ -36,6 +36,15 @@ impl Markers {
     {
         self.0.read().iter().any(|m| m.is::<M>())
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = Rc<dyn Marker>> {
+        self.0
+            .read()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
 }
 
 impl Default for Markers {

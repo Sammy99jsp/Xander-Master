@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     future::ready,
     marker::PhantomData,
     pin::Pin,
@@ -21,7 +20,9 @@ pub trait DispatchState {
     where
         H: EventHandler<Self> + 'static;
 
-    fn update(&self) -> impl IntoFuture<Output = Result<(), Box<dyn Any>>> {
+    fn update(
+        &self,
+    ) -> impl IntoFuture<Output = Result<(), <Self::Interface as flow::Interface>::IoError>> {
         ready(Ok(()))
     }
 }
@@ -144,7 +145,6 @@ where
         //         as it is from an Rc<DispatchWaker>.
         let waker = unsafe { waker.as_ref().unwrap_unchecked() };
         let state: &State = waker.dispatcher.state();
-        state.update();
 
         Poll::Ready(state)
     }

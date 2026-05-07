@@ -15,7 +15,7 @@ use xander_runtime::{
 use crate::engine::{
     game::{
         combat::{
-            Combatant, Timeslot,
+            Combatant, Reaction, Timeslot,
             action::{Attack, NoActionLeft},
             turn::Turn,
             utils::Availability,
@@ -124,7 +124,8 @@ impl AttacksLeft {
                 self.current_turn.set(Rc::downgrade(turn));
                 self.count.get() < self.me.stats.actions.attacks.max_attacks.get().await
             }
-            Timeslot::Reaction(_) => true,
+            Timeslot::Reaction(Reaction::AttackOfOpportunity(_)) => true,
+            Timeslot::Any => true,
         }
     }
 

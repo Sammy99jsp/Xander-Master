@@ -17,6 +17,15 @@ pub struct Single<T>(#[serde(deserialize_with = "deserialize_single")] pub Inner
 where
     T: Singleton + ?Sized + 'static;
 
+impl<T> Clone for Single<T>
+where
+    T: Singleton + ?Sized + 'static,
+{
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
 pub fn deserialize_single<'de, D, T>(deserializer: D) -> Result<InnerSingle<T>, D::Error>
 where
     D: Deserializer<'de>,

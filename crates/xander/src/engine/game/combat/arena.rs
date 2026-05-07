@@ -2,7 +2,11 @@ use std::{cell::RefCell, rc::Weak};
 
 use xander_runtime::{DynWeak, dynx::cells::InnerValue, lived::LivedList};
 
-use crate::engine::game::{combat::Combatant, magic::aoe::AreaOfEffect, measure::Squares};
+use crate::engine::game::{
+    combat::Combatant,
+    magic::aoe::AreaOfEffect,
+    measure::{FEET_PER_SQUARE, Feet, Squares},
+};
 
 #[derive(Debug, Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Square {
@@ -46,10 +50,10 @@ impl Square {
     }
 }
 
-#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-pub struct Dimensions {
-    pub width: Squares,
-    pub height: Squares,
+#[derive(Debug, Clone, Copy, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct Dimensions<T = Squares> {
+    pub width: T,
+    pub height: T,
 }
 
 impl Dimensions {
@@ -62,6 +66,41 @@ impl Dimensions {
 pub struct Position {
     pub x: Squares,
     pub y: Squares,
+}
+
+impl Position {
+    pub fn distance(&self, to: Self) -> Squares {
+        #[inline]
+        const fn sgn(x: i32) -> i32 {
+            if x < 0 { -1 } else { 1 }
+        }
+
+        let (delta_x, delta_y) = (
+            to.x.0 as i32 - self.x.0 as i32,
+            to.y.0 as i32 - self.y.0 as i32,
+        );
+        let c = i32::min(delta_x.abs(), delta_y.abs());
+        let a = sgn(delta_x) * (delta_x - sgn(delta_x) * c);
+        let b = sgn(delta_y) * (delta_y - sgn(delta_y) * c);
+
+        let distance = a + b + c;
+        debug_assert!(distance >= 0);
+
+        Squares(distance as u32)
+    }
+
+    pub fn displacement_to(&self, to: Self) -> Displacement {
+        Displacement {
+            x: Squares(to.x.0 as i32 - self.x.0 as i32),
+            y: Squares(to.y.0 as i32 - self.y.0 as i32),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+pub struct Displacement {
+    pub x: Squares<i32>,
+    pub y: Squares<i32>,
 }
 
 pub const DIRECTIONS: [[i32; 2]; 8] = [
@@ -78,12 +117,13 @@ pub const DIRECTIONS: [[i32; 2]; 8] = [
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct Arena {
     grid: Box<[Square]>,
-    dimensions: Dimensions,
+    pub dimensions: Dimensions,
 }
 
 impl Arena {
     pub fn new(dimensions: Dimensions) -> Self {
         let mut grid = Vec::new();
+
         let n = dimensions.width.0 as usize * dimensions.height.0 as usize;
         grid.reserve_exact(n);
 
@@ -95,6 +135,36 @@ impl Arena {
             grid: grid.into_boxed_slice(),
             dimensions,
         }
+    }
+
+    pub fn new_feet(dimensions: Dimensions<Feet>) -> Option<Self> {
+        if !(dimensions.height.0.is_multiple_of(FEET_PER_SQUARE)
+            && dimensions.width.0.is_multiple_of(FEET_PER_SQUARE))
+        {
+            return None;
+        }
+
+        let (width, height) = (
+            dimensions.width.0 / FEET_PER_SQUARE,
+            dimensions.height.0 / FEET_PER_SQUARE,
+        );
+
+        let mut grid = Vec::new();
+
+        let n = width as usize * height as usize;
+        grid.reserve_exact(n);
+
+        for _ in 0..n {
+            grid.push(Square::new());
+        }
+
+        Some(Self {
+            grid: grid.into_boxed_slice(),
+            dimensions: Dimensions {
+                width: Squares(width),
+                height: Squares(height),
+            },
+        })
     }
 
     #[cfg(test)]
@@ -114,27 +184,6 @@ impl Arena {
 
     pub fn at(&self, pos: Position) -> Option<&Square> {
         self.grid.get(self.flat_index(pos)?)
-    }
-
-    #[inline]
-    pub fn distance(from: Position, to: Position) -> Squares {
-        #[inline]
-        const fn sgn(x: i32) -> i32 {
-            if x < 0 { -1 } else { 1 }
-        }
-
-        let (delta_x, delta_y) = (
-            to.x.0 as i32 - from.x.0 as i32,
-            to.y.0 as i32 - from.y.0 as i32,
-        );
-        let c = i32::min(delta_x.abs(), delta_y.abs());
-        let a = sgn(delta_x) * (delta_x - sgn(delta_x) * c);
-        let b = sgn(delta_y) * (delta_y - sgn(delta_y) * c);
-
-        let distance = a + b + c;
-        debug_assert!(distance >= 0);
-
-        Squares(distance as u32)
     }
 
     pub fn around(&self, pos @ Position { x, y }: Position) -> Option<Around<'_>> {
@@ -173,7 +222,7 @@ impl Arena {
                 let o = sq.occupants.borrow()
                 .first().cloned()
                 .as_ref().and_then(Weak::upgrade)
-                .and_then(|a|a.creature.name.chars().next())
+                .and_then(|a|if a.creature.is_dead(){Some('☠')} else {a.creature.name.chars().next()})
                 .unwrap_or(EMPTY);
 
                 output.push(o);
@@ -255,7 +304,7 @@ mod tests {
                 x: Squares(p2.0),
                 y: Squares(p2.1),
             };
-            Arena::distance(from, to).0
+            from.distance(to).0
         }
 
         let d1 = dist((3, 3), (2, 2));

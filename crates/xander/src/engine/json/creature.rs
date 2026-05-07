@@ -41,7 +41,7 @@ use crate::engine::json::{
     utils::{Single, WithId},
 };
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Creature {
     pub name: String,
     #[schemars(with = "CreatureSizeInner")]
@@ -50,14 +50,14 @@ pub struct Creature {
     pub stats: Stats,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(try_from = "CreatureSizeInner")]
 pub struct CreatureSize(pub rs::CreatureSize);
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct GargantuanDimension(#[schemars(range(min = 20,))] pub u16);
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CreatureSizeInner {
     Tiny,
@@ -67,7 +67,7 @@ pub enum CreatureSizeInner {
     Gargantuan(Option<(GargantuanDimension, GargantuanDimension)>),
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CreatureKind {
     Monster(Monster),
@@ -81,7 +81,7 @@ pub enum CrRaw {
     U8(u8),
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Monster {
     #[serde(deserialize_with = "visitors::deserialize_cr")]
     #[schemars(with = "CrRaw", example = 2, example=&"1/4")]
@@ -90,7 +90,7 @@ pub struct Monster {
     pub ty: MonsterType,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct MonsterType {
     #[serde(rename = "type")]
     #[schemars(with = "String")]
@@ -101,7 +101,7 @@ pub struct MonsterType {
     pub tags: Vec<Single<dyn rs::MonsterTag>>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Stats {
     pub speed: u32,
     // pub proficiencies: Vec<Proficiency>,
@@ -111,7 +111,7 @@ pub struct Stats {
     pub ac: i32,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct AbilityScores {
     pub str: AbilityScore,
     pub dex: AbilityScore,
@@ -121,7 +121,7 @@ pub struct AbilityScores {
     pub cha: AbilityScore,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(try_from = "u8")]
 pub struct AbilityScore(#[schemars(with = "u8", range(min = 1, max = 30))] rs::AbilityScore);
 
@@ -133,7 +133,7 @@ impl TryFrom<u8> for AbilityScore {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Health {
     pub max_hp: NonZeroU32,
 
@@ -147,12 +147,12 @@ pub struct Health {
     pub vulnerabilities: Vec<DamageType>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Actions {
     pub attacks: Vec<Attack>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 pub struct Attack {
     pub name: String,
     pub kind: AttackKind,
@@ -161,7 +161,7 @@ pub struct Attack {
     pub ability: Ability,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
 pub enum AttackKind {
@@ -170,12 +170,12 @@ pub enum AttackKind {
         reach: Option<u32>,
     },
     Ranged {
-        #[serde(flatten)]
+        #[schemars(example = 30, example = [30, 240])]
         range: Range,
     },
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Range {
     Single(u32),
@@ -377,7 +377,7 @@ impl TryFrom<CreatureSizeInner> for CreatureSize {
         Ok(Self(match value {
             CreatureSizeInner::Tiny => rs::CreatureSize::Tiny,
             CreatureSizeInner::Small => rs::CreatureSize::Small,
-            CreatureSizeInner::Medium => rs::CreatureSize::Huge,
+            CreatureSizeInner::Medium => rs::CreatureSize::Medium,
             CreatureSizeInner::Large => rs::CreatureSize::Large,
             CreatureSizeInner::Gargantuan(None) => rs::CreatureSize::Gargantuan(
                 rs::GargantuanDim::new(20).unwrap(),

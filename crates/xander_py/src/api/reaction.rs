@@ -11,7 +11,8 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 use crate::{
     api::{
         attack::{Attack, AttackReport},
-        game::Combatant,
+        game::Me,
+        turn::{Combatant, to_py_action},
         utils::{Availability, Illegal},
     },
     py::utils::{OrExpired, PythonWeak, UnsafePythonEscape, run_future},
@@ -37,8 +38,32 @@ impl Reaction {
     pub fn type_<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.kind.clone().into_bound_py_any(py)
     }
-}
 
+    #[getter]
+    pub fn me(&self) -> PyResult<Me> {
+        match &self.kind {
+            ReactionKind::AttackOfOpportunity(aoo) => aoo.me(),
+        }
+    }
+
+    #[getter]
+    pub fn actions<'py>(&self, py: Python<'py>) -> PyResult<Vec<Availability>> {
+        match &self.kind {
+            ReactionKind::AttackOfOpportunity(aoo) => aoo.actions(py),
+        }
+    }
+
+    pub fn take<'py>(
+        &self,
+        py: Python<'py>,
+        attack: PyRef<'py, Attack>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        match &self.kind {
+            ReactionKind::AttackOfOpportunity(aoo) => aoo.take(py, attack)
+        }
+    }
+
+}
 #[doc(hidden)]
 #[derive(Clone, IntoPyObject)]
 pub enum ReactionKind {
@@ -69,21 +94,17 @@ impl AttackOfOpportunity {
 #[pymethods]
 impl AttackOfOpportunity {
     #[getter]
-    pub fn attacks(&self, py: Python<'_>) -> PyResult<Vec<Availability>> {
+    pub fn actions(&self, py: Python<'_>) -> PyResult<Vec<Availability>> {
         let aoo = self.upgrade()?;
-
-        aoo.eligible_opportunity_attacks()
-            .iter()
-            .cloned()
+        let game = self.game.upgrade_or_expired("Game")?;
+        run_future(game, aoo.actions())
+            .into_iter()
             .map(|availability| {
-                availability.map(|a| Attack {
-                    attack: unsafe { PythonWeak::new(a) },
-                    me: unsafe { PythonWeak::new(aoo.me.clone()) },
-                    game: self.game.clone(),
-                    target: unsafe { PythonWeak::new(aoo.target.clone()) },
-                })
+                availability
+                    .map(|a| to_py_action(py, self.game.clone(), a))
+                    .transpose()
             })
-            .map(|availability| Availability::new(py, availability))
+            .map(|availability| availability.map(Availability::from_any))
             .collect::<PyResult<Vec<_>>>()
     }
 
@@ -96,7 +117,7 @@ impl AttackOfOpportunity {
         })
     }
 
-    pub fn attack<'py>(
+    pub fn take<'py>(
         &self,
         py: Python<'py>,
         attack: PyRef<'py, Attack>,
@@ -121,5 +142,13 @@ impl AttackOfOpportunity {
         let end: Arc<AtomicBool> = self.end.upgrade().unwrap();
         end.store(true, Ordering::Relaxed);
         Ok(())
+    }
+
+    #[getter]
+    pub fn me(&self) -> PyResult<Me> {
+        Ok(Me {
+            me: unsafe { PythonWeak::new(self.upgrade()?.me.clone()) },
+            game: self.game.clone(),
+        })
     }
 }

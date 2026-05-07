@@ -9,10 +9,10 @@ use pyo3::prelude::*;
 #[pymodule]
 mod xander {
     #[pymodule_export]
-    use crate::api::game::{Agent, Arena, Combatant, Creature, Game, Position, GameEnd};
+    use crate::api::game::{Agent, Arena, Creature, Game, GameEnd, Me, Position};
 
     #[pymodule_export]
-    use crate::api::turn::{Dash, Disengage, Dodge, Movement, Turn};
+    use crate::api::turn::{Combatant, Dash, Disengage, Dodge, Movement, Turn, View};
 
     #[pymodule_export]
     use crate::api::reaction::{AttackOfOpportunity, Reaction};
@@ -28,7 +28,13 @@ mod xander {
 
     #[pymodule_export]
     use crate::api::utils::{Availability, Illegal};
-    
+
+    #[pymodule_export]
+    use crate::api::templating::templating;
+
+    #[pymodule_export]
+    use crate::api::consts::consts;
+
     #[pymodule_export]
     use crate::api::schema::schema;
 }

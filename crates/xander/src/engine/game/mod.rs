@@ -1,4 +1,4 @@
-use std::{any::Any, rc::Rc};
+use std::rc::Rc;
 
 use xander_runtime::flow::{
     Dispatcher as FlowDispatcher,
@@ -34,15 +34,15 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new<Io>(base: Io, arena: Arena) -> Rc<Self>
+    pub fn new<Io>(io: Io, arena: Arena) -> Rc<Self>
     where
-        Io: FlowInterface + 'static,
+        Io: DynInterface + 'static,
     {
         Rc::new_cyclic(|this| Self {
             combat: Rc::new(Combat::new(arena)),
             // SAFETY: Using Rc::new_cyclic to ensure lifetimes satisfy the Dispatcher.
             dispatcher: unsafe { Dispatcher::new(this.clone()) },
-            interface: Interface::new(base),
+            interface: Interface::new(io, this.clone()),
             event_handlers: EventHandlers::new(),
         })
     }
@@ -69,8 +69,10 @@ impl DispatchState for Game {
         self.event_handlers.listen(handler);
     }
 
-    fn update(&self) -> impl IntoFuture<Output = Result<(), Box<dyn Any>>> {
-        self.interface.update()
+    fn update(
+        &self,
+    ) -> impl IntoFuture<Output = Result<(), <Self::Interface as FlowInterface>::IoError>> {
+        self.interface.update(self)
     }
 }
 

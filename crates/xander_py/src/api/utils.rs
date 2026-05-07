@@ -15,9 +15,24 @@ impl Illegal {
 
 #[pymethods]
 impl Illegal {
+    #[new]
+    pub fn new_thing(reason: String) -> Self {
+        Self(reason)
+    }
+
+    #[getter]
+    pub fn reason(&self) -> String {
+        self.0.clone()
+    }
+
     #[pyo3(name = "__repr__")]
     pub fn repr(&self) -> String {
         format!("Illegal({})", &self.0)
+    }
+
+    #[pyo3(name = "__str__")]
+    pub fn to_str(&self) -> String {
+        self.reason()
     }
 }
 

@@ -44,3 +44,7 @@ pip-selfcheck.json
 
 # Pyenv
 .python-version
+
+# Models (should be uploaded to HuggingFace)
+*.zip
+logs/*

@@ -1,15 +1,16 @@
-from typing import Generator, Literal as L
+from typing import Generator, Literal as L, TypeAlias
 
 from xander import Attack
 from xander.xander import Dash, Disengage, Dodge, Turn, Reaction, GameEnd
 
 
-Direction = L[0, 1, 2, 3, 4, 5, 6, 7]
-AgentCoroutine = Generator[None, Turn | Reaction | GameEnd, None]
-Action = Dash | Disengage | Dodge | Attack
+Direction: TypeAlias = L[0, 1, 2, 3, 4, 5, 6, 7]
+Event: TypeAlias = Turn | Reaction | GameEnd
+CombatantCoroutine: TypeAlias = Generator[None, Event, None]
+Action: TypeAlias = Dash | Disengage | Dodge | Attack
 
 
-class DIRECTIONS:
+class Directions:
     UP = 0
     TOP_RIGHT = 1
     RIGHT = 2

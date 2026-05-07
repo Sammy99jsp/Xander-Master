@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::engine::game::combat::{Combat, Combatant};
 
@@ -35,4 +35,5 @@ impl WinCondition {
 #[derive(Debug)]
 pub struct GameEndReport {
     pub won: bool,
+    pub me: Weak<Combatant>,
 }

@@ -10,7 +10,7 @@ mod rs {
     pub use d20::DExpr;
 }
 
-#[derive(serde::Deserialize, JsonSchema)]
+#[derive(Clone, serde::Deserialize, JsonSchema)]
 #[serde(try_from = "String")]
 #[schemars(example = &"d6")]
 pub struct DExpr(#[schemars(with = "&str")] d20::DExpr);
@@ -24,7 +24,7 @@ impl TryFrom<String> for DExpr {
     }
 }
 
-#[derive(serde::Deserialize, JsonSchema, PartialEq, Eq, Hash)]
+#[derive(Clone, serde::Deserialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum DamageType {
     Acid,
@@ -62,7 +62,7 @@ impl DamageType {
     }
 }
 
-#[derive(serde::Deserialize, JsonSchema)]
+#[derive(Clone, serde::Deserialize, JsonSchema)]
 pub struct DamageDice(HashMap<DamageType, DExpr>);
 
 impl From<DamageDice> for rs::Damage<rs::DExpr> {
@@ -71,7 +71,7 @@ impl From<DamageDice> for rs::Damage<rs::DExpr> {
     }
 }
 
-#[derive(serde::Deserialize, JsonSchema)]
+#[derive(Clone, serde::Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Ability {
     #[serde(alias = "str")]

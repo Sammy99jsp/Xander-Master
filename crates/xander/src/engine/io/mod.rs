@@ -4,19 +4,25 @@ pub mod roller;
 use std::{
     cell::{Cell, RefCell},
     future::ready,
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 
 use d20::provider::local_rng::LocalRng;
 use smol::future::FutureExt;
 use xander_runtime::{
-    flow::{Interface as FlowInterface, io::prelude::*},
+    flow::{
+        Interface as FlowInterface,
+        io::{TestInterface, prelude::*},
+    },
     futures::prelude::future::LocalBoxFuture,
 };
 
 pub use agent::Agent;
 
-use crate::engine::io::agent::NoopAgent;
+use crate::engine::{
+    game::Game,
+    io::agent::{IoError, NoopAgent},
+};
 
 #[derive(Debug)]
 pub struct Interface {
@@ -26,7 +32,7 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn new<Io>(base: Io) -> Self
+    pub fn new<Io>(base: Io, game: Weak<Game>) -> Self
     where
         Io: DynInterface + 'static,
     {
@@ -34,6 +40,7 @@ impl Interface {
             actors: RefCell::new(vec![Rc::new(NoopAgent {
                 name: "GM".to_string(),
                 roller: Box::new(LocalRng::with_seed(0)),
+                game,
             })]),
             current_index: Cell::new(1),
             base: Box::new(base),
@@ -52,9 +59,14 @@ impl Interface {
 
         new
     }
+
+    pub fn log_error(&self, error: IoError) {
+        self.base.error(error);
+    }
 }
 
 impl FlowInterface for Interface {
+    type IoError = IoError;
     type ActorState = dyn Agent;
 
     fn log<'a, 'b: 'a>(&'a self, displ: &'b dyn std::fmt::Display) -> LocalBoxFuture<'a, ()> {
@@ -75,26 +87,45 @@ impl FlowInterface for Interface {
 }
 
 pub trait DynInterface: std::fmt::Debug {
+    fn error(&self, error: IoError);
     fn log<'a, 'b: 'a>(&'a self, displ: &'b dyn std::fmt::Display) -> LocalBoxFuture<'a, ()>;
     fn prompt_dyn<'a>(&'a self, decision: Decision) -> LocalBoxFuture<'a, Box<dyn Response>>;
-    fn update<'a>(&'a self) -> LocalBoxFuture<'a, Result<(), Box<dyn Any>>>;
+    fn update<'a>(&'a self, game: &'a Game) -> LocalBoxFuture<'a, Result<(), IoError>>;
 }
 
-impl<T> DynInterface for T
-where
-    T: FlowInterface + ?Sized,
-{
+impl DynInterface for Interface {
     #[inline]
     fn log<'a, 'b: 'a>(&'a self, displ: &'b dyn std::fmt::Display) -> LocalBoxFuture<'a, ()> {
-        FlowInterface::log(self, displ)
+        self.base.log(displ)
     }
 
     #[inline]
     fn prompt_dyn<'a>(&'a self, decision: Decision) -> LocalBoxFuture<'a, Box<dyn Response>> {
-        FlowInterface::prompt_dyn(self, decision)
+        self.base.prompt_dyn(decision)
     }
 
-    fn update<'a>(&'a self) -> LocalBoxFuture<'a, Result<(), Box<dyn Any>>> {
+    fn update<'a>(&'a self, game: &'a Game) -> LocalBoxFuture<'a, Result<(), IoError>> {
+        self.base.update(game)
+    }
+
+    fn error(&self, error: IoError) {
+        self.base.error(error);
+    }
+}
+
+impl DynInterface for TestInterface {
+    fn log<'a, 'b: 'a>(&'a self, displ: &'b dyn std::fmt::Display) -> LocalBoxFuture<'a, ()> {
+        println!("{displ}");
+        ready(()).boxed_local()
+    }
+
+    fn prompt_dyn<'a>(&'a self, _: Decision) -> LocalBoxFuture<'a, Box<dyn Response>> {
+        unimplemented!()
+    }
+
+    fn update<'a>(&'a self, _: &'a Game) -> LocalBoxFuture<'a, Result<(), IoError>> {
         ready(Ok(())).boxed_local()
     }
+
+    fn error(&self, _: IoError) {}
 }

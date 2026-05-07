@@ -1,0 +1,42 @@
+{
+    "$schema": "./creature.schema.json",
+    "name": "Orc",
+    "kind": {
+        "monster": {
+            "cr": "1/2",
+            "type": {
+                "type": "HUMANOID"
+            }
+        }
+    },
+    "size": "medium",
+    "stats": {
+        "ac": 10,
+        "health": {
+            "max_hp": 15
+        },
+        "speed": 20,
+        "scores": {
+            "str": 16,
+            "dex": 12,
+            "con": 16,
+            "int": 10,
+            "wis": 11,
+            "cha": 10
+        },
+        "actions": {
+            "attacks": [
+                {
+                    "name": "Greataxe",
+                    "kind": {
+                        "type": "melee"
+                    },
+                    "ability": "strength",
+                    "hit": {
+                        "piercing": "1d12"
+                    }
+                }
+            ]
+        }
+    }
+}

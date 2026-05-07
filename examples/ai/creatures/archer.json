@@ -1,0 +1,46 @@
+{
+    "$schema": "./creature.schema.json",
+    "name": "Archer",
+    "kind": {
+        "monster": {
+            "cr": "1/8",
+            "type": {
+                "type": "HUMANOID"
+            }
+        }
+    },
+    "size": "medium",
+    "stats": {
+        "ac": 10,
+        "health": {
+            "max_hp": 6
+        },
+        "speed": 30,
+        "scores": {
+            "str": 7,
+            "dex": 14,
+            "con": 8,
+            "int": 10,
+            "wis": 9,
+            "cha": 6
+        },
+        "actions": {
+            "attacks": [
+                {
+                    "name": "Hand Crossbow",
+                    "kind": {
+                        "type": "ranged",
+                        "range": [
+                            30,
+                            120
+                        ]
+                    },
+                    "ability": "dexterity",
+                    "hit": {
+                        "piercing": "1d6+2"
+                    }
+                }
+            ]
+        }
+    }
+}

@@ -86,8 +86,12 @@ impl Add<Direction> for Position {
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(serialize_bounds(__S: rkyv::ser::Writer + rkyv::ser::Sharing + rkyv::ser::Allocator, __S::Error: rkyv::rancor::Source))]
+#[rkyv(deserialize_bounds(__D: rkyv::de::Pooling, __D::Error: rkyv::rancor::Source))]
+#[rkyv(bytecheck(bounds(__C: rkyv::validation::ArchiveContext + rkyv::validation::SharedContext, __C::Error: rkyv::rancor::Source)))]
 pub struct Turn {
-    pub arena: Weak<Arena>,
+    #[rkyv(omit_bounds)]
+    pub combat: Weak<Combat>,
     pub me: Weak<Combatant>,
     pub movement: Movement,
     #[rkyv(with = InnerValue<Option<ActionType>>)]
@@ -107,16 +111,50 @@ pub enum CannotMove {
 }
 
 impl Turn {
-    pub async fn new(combat: &Combat, combatant: &Rc<Combatant>) -> Rc<Self> {
+    pub async fn new(combat: &Rc<Combat>, combatant: &Rc<Combatant>) -> Rc<Self> {
         Rc::new(Self {
-            arena: Rc::downgrade(&combat.arena),
+            combat: Rc::downgrade(combat),
             me: Rc::downgrade(combatant),
             movement: Movement::new(),
             action: Cell::new(None),
         })
     }
 
+    pub async fn available_movement_directions(&self) -> Vec<Option<Direction>> {
+        let me = self.me.upgrade().unwrap();
+        if self.movement.used_up(&me).await {
+            return vec![None; 8];
+        }
+
+        let arena: &Rc<Arena> = &self.combat.upgrade().unwrap().arena;
+
+        let Some(around) = arena.around(me.position.get()) else {
+            return vec![None; 8];
+        };
+
+        around
+            .clockwise
+            .into_iter()
+            .enumerate()
+            .map(|(i, sq)| sq.and_then(|sq| (!sq.is_occupied()).then_some(DIRECTIONS[i])))
+            .collect()
+    }
+
+    pub async fn actions(self: &Rc<Self>) -> Vec<Availability<Action>> {
+        Action::available_for_slot(&Timeslot::Turn(self.clone())).await
+    }
+
+    pub async fn movement_left(&self) -> Feet {
+        let me: Rc<Combatant> = self.me.upgrade().unwrap();
+
+        let used = self.movement.used.get();
+        let speed = me.creature.stats.speed.get().await;
+
+        speed - used
+    }
+
     pub async fn move_in(&self, direction: Direction) -> Result<(), CannotMove> {
+        let combat: Rc<Combat> = self.combat.upgrade().unwrap();
         let me = self.me.upgrade().unwrap();
         if self.movement.used_up(&me).await {
             return Err(CannotMove::NoMovementLeft);
@@ -131,9 +169,7 @@ impl Turn {
             return Err(CannotMove::OutOfBounds);
         };
 
-        let arena = self.arena.upgrade().unwrap();
-
-        let Some(to_sq): Option<&Square> = arena.at(to) else {
+        let Some(to_sq): Option<&Square> = combat.arena.at(to) else {
             return Err(CannotMove::OutOfBounds);
         };
 
@@ -142,7 +178,7 @@ impl Turn {
         }
 
         let from = me.position.get();
-        let from_sq: &Square = arena.at(from).unwrap();
+        let from_sq: &Square = combat.arena.at(from).unwrap();
 
         // Fire the event...
         let me_weak = Rc::downgrade(&me);
@@ -175,39 +211,6 @@ impl Turn {
         }
 
         Ok(())
-    }
-
-    pub async fn available_movement_directions(&self) -> Vec<Option<Direction>> {
-        let me = self.me.upgrade().unwrap();
-        if self.movement.used_up(&me).await {
-            return vec![None; 8];
-        }
-
-        let arena: Rc<Arena> = self.arena.upgrade().unwrap();
-
-        let Some(around) = arena.around(me.position.get()) else {
-            return vec![None; 8];
-        };
-
-        around
-            .clockwise
-            .into_iter()
-            .enumerate()
-            .map(|(i, sq)| sq.and_then(|sq| (!sq.is_occupied()).then_some(DIRECTIONS[i])))
-            .collect()
-    }
-
-    pub async fn actions(self: &Rc<Self>) -> Vec<Availability<Action>> {
-        Action::available_for_turn(self).await
-    }
-
-    pub async fn movement_left(&self) -> Feet {
-        let me: Rc<Combatant> = self.me.upgrade().unwrap();
-
-        let used = self.movement.used.get();
-        let speed = me.creature.stats.speed.get().await;
-
-        speed - used
     }
 
     #[doc(hidden)]
@@ -262,7 +265,6 @@ impl Turn {
             .use_attack(&slot)
             .await
         {
-            println!("B");
             trans.cancel();
             return Err(err);
         }
@@ -315,8 +317,7 @@ impl Turn {
         let disengaging = Disengaging {
             turn: Rc::downgrade(self),
         }
-        .apply()
-        .await;
+        .apply();
 
         me.creature.stats.markers.push(disengaging);
 
@@ -357,9 +358,15 @@ pub mod events {
         register,
     };
 
-    use crate::engine::game::{
-        Dispatcher, Game,
-        combat::{Combatant, arena::Position, reaction::AttackOfOpportunity, utils::Availability},
+    use crate::engine::{
+        game::{
+            Dispatcher, Game,
+            combat::{
+                Combatant, action::disengage::Disengaging, arena::Position,
+                reaction::AttackOfOpportunity, utils::Availability,
+            },
+        },
+        io::DynInterface,
     };
 
     #[derive(Debug)]
@@ -411,12 +418,21 @@ pub mod events {
         ) -> impl IntoFuture<Output = ()> + 's {
             async {
                 #[deny(unused)]
-                let me = event.me.upgrade().unwrap();
+                let me: Rc<Combatant> = event.me.upgrade().unwrap();
+
+                if me.creature.stats.markers.contains::<Disengaging>() {
+                    return;
+                }
 
                 let game = Dispatcher::local().await;
                 for combatant in game.combat.initiative() {
                     // Skip ourselves.
                     if std::ptr::eq(Rc::as_ptr(&combatant), event.me.as_ptr()) {
+                        continue;
+                    }
+
+                    // Skip Dead combatants
+                    if combatant.creature.is_dead() {
                         continue;
                     }
 
@@ -431,9 +447,10 @@ pub mod events {
                         // Targeting us.
                         target: Rc::downgrade(&me),
                         to: event.to,
+                        combat: Rc::downgrade(&game.combat),
                     });
 
-                    let eligible_attacks = aoo.eligible_opportunity_attacks();
+                    let eligible_attacks = aoo.actions().await;
 
                     let has_eligible_attacks =
                         eligible_attacks.iter().any(Availability::is_available);
@@ -445,7 +462,7 @@ pub mod events {
                     combatant
                         .opportunity_attack(aoo)
                         .await
-                        .unwrap_or_else(|_| todo!("Handle this error properly..."));
+                        .unwrap_or_else(|err| game.interface.error(err));
 
                     if me.creature.is_dead() {
                         event.cancelled = Some(MovedCancelledReason::Died);
@@ -469,7 +486,7 @@ mod tests {
     #[test]
     fn test_transaction() {
         let turn = Turn {
-            arena: Weak::new(),
+            combat: Weak::new(),
             me: Weak::new(),
             movement: super::Movement {
                 used: Cell::default(),
@@ -496,7 +513,7 @@ mod tests {
     #[test]
     fn test_transaction_cancelled() {
         let turn = Turn {
-            arena: Weak::new(),
+            combat: Weak::new(),
             me: Weak::new(),
             movement: super::Movement {
                 used: Cell::default(),

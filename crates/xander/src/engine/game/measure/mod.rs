@@ -14,7 +14,7 @@ pub const FEET_PER_SQUARE: u32 = 5;
 pub struct Feet<T = u32>(pub T);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Archive, Serialize, Deserialize)]
-pub struct Squares(pub u32);
+pub struct Squares<T = u32>(pub T);
 
 impl Squares {
     pub const fn from_feet_f64(feet: f64) -> Squares {

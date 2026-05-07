@@ -105,7 +105,7 @@ impl Range {
     pub fn within(&self, distance: Feet) -> bool {
         match self {
             Range::Single(range) => distance <= *range,
-            Range::Long { short, long } => (*short <= distance) || (*long <= distance),
+            Range::Long { short, long } => (distance <= *short) || (distance <= *long),
         }
     }
 }
@@ -146,7 +146,7 @@ impl AttackBase for SetMonsterAttack {
         me: &Rc<Combatant>,
         target: &Rc<Combatant>,
     ) -> Result<(), AttackUseError> {
-        if !attack.range().within(me.distance_between(target)) {
+        if !attack.range().within(me.distance_to(target)) {
             return Err(AttackUseError::OutOfRange);
         }
 
@@ -201,7 +201,7 @@ impl AttackBase for SetMonsterAttack {
             // Ranged attack checks.
             if let AttackKind::Ranged { range } = &attack.kind {
                 const CLOSE_COMBAT: Feet = Feet(5);
-                let distance = me.distance_between(target);
+                let distance = me.distance_to(target);
 
                 // Ranged Attacks in Close Combat
                 // TODO: Check for incapacitated condition.

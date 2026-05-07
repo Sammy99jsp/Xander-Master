@@ -1,12 +1,13 @@
 pub mod action;
+pub mod affiliation;
 pub mod arena;
 pub mod reaction;
 pub mod turn;
 pub mod utils;
+pub mod view;
 pub mod win;
 
 use std::{
-    any::Any,
     cell::{Cell, RefCell},
     rc::{Rc, Weak},
 };
@@ -18,20 +19,26 @@ use xander_runtime::{
     flow::{dispatcher::DispatchState, io::Actor},
 };
 
-use crate::engine::game::{
-    Dispatcher, Game,
-    combat::{
-        arena::{Arena, Position},
-        reaction::AttackOfOpportunity,
-        turn::events::OpportunityAttackHandler,
-        win::WinCondition,
+use crate::engine::{
+    game::{
+        Dispatcher, Game,
+        combat::{
+            action::Action,
+            affiliation::Affiliation,
+            arena::{Arena, Position},
+            reaction::AttackOfOpportunity,
+            turn::events::OpportunityAttackHandler,
+            view::View,
+            win::WinCondition,
+        },
+        creature::Creature,
+        measure::{
+            Feet,
+            time::{Rounds, Turns},
+        },
+        stats::d20_test::{Check, Dc},
     },
-    creature::Creature,
-    measure::{
-        Feet,
-        time::{Rounds, Turns},
-    },
-    stats::d20_test::{Check, Dc},
+    io::agent::{AgentExt, IoError},
 };
 
 pub use action::attack::{self, Attack};
@@ -45,6 +52,17 @@ use super::stats::Ability;
 pub enum Timeslot {
     Turn(Rc<Turn>),
     Reaction(Reaction),
+    Any,
+}
+
+impl Timeslot {
+    pub fn me(&self) -> &Weak<Combatant> {
+        match self {
+            Timeslot::Turn(turn) => &turn.me,
+            Timeslot::Reaction(Reaction::AttackOfOpportunity(aoo)) => &aoo.me,
+            Timeslot::Any => unimplemented!()
+        }
+    }
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -129,6 +147,8 @@ pub struct Combatant {
 
     #[rkyv(with = InnerValue<i32>)]
     pub initiative_score: Cell<i32>,
+
+    pub affiliation: Affiliation,
 }
 
 impl Combatant {
@@ -137,17 +157,21 @@ impl Combatant {
     }
 
     pub fn distance_from(&self, location: Position) -> Feet {
-        Feet::from(Arena::distance(self.position.get(), location))
+        Feet::from(self.position.get().distance(location))
     }
 
-    pub fn distance_between(&self, other: &Combatant) -> Feet {
-        Feet::from(Arena::distance(self.position.get(), other.position.get()))
+    pub fn distance_to(&self, other: &Combatant) -> Feet {
+        Feet::from(self.position.get().distance(other.position.get()))
+    }
+
+    pub async fn view(self: &Rc<Self>) -> View<'_> {
+        View::new(self).await
     }
 
     async fn opportunity_attack(
         self: &Rc<Self>,
         aoo: Rc<AttackOfOpportunity>,
-    ) -> Result<(), Box<dyn Any>> {
+    ) -> Result<(), IoError> {
         let game = Dispatcher::local().await;
         let agent = self.actor.state(&game.interface);
         agent.opportunity_attack(aoo).await?;
@@ -168,6 +192,10 @@ impl Combatant {
             .unwrap();
 
         self.initiative_score.set(ev.roll_result.total());
+    }
+
+    pub async fn actions<'a>(self: &'a Rc<Self>) -> impl Iterator<Item = Action> + use<'a> {
+        Action::actions_for(self).await
     }
 }
 
@@ -202,6 +230,7 @@ impl Combat {
             actor,
             position: Cell::new(position),
             initiative_score: Cell::new(0),
+            affiliation: Affiliation::default(),
         });
 
         combatant.roll_for_initiative().await;
@@ -238,6 +267,10 @@ impl Combat {
         self.initiative.borrow().clone()
     }
 
+    pub fn initiative_weak(&self) -> Vec<Weak<Combatant>> {
+        self.initiative.borrow().iter().map(Rc::downgrade).collect()
+    }
+
     pub fn len_members(&self) -> usize {
         self.initiative.borrow().len()
     }
@@ -255,9 +288,23 @@ impl Combat {
         }
     }
 
-    pub async fn termination_condition(&self, game: &Game) -> Result<bool, Box<dyn Any>> {
+    pub fn is_terminating(&self) -> bool {
         if self.len_members() <= 1 {
-            return Ok(true);
+            return true;
+        }
+
+        let winners = self.win_condition.has_happened(self);
+
+        if winners.is_none() {
+            return false;
+        };
+
+        true
+    }
+
+    pub async fn termination_condition(&self, game: &Game) -> Result<bool, IoError> {
+        if !self.is_terminating() {
+            return Ok(false);
         }
 
         let winners = self.win_condition.has_happened(self);
@@ -271,24 +318,33 @@ impl Combat {
 
         for winner in winners {
             let agent = winner.actor.state(&game.interface);
-            agent.game_end(win::GameEndReport { won: true }).await?;
+            agent
+                .game_end(win::GameEndReport {
+                    won: true,
+                    me: Rc::downgrade(&winner),
+                })
+                .await?;
         }
 
         for loser in losers {
             let agent = loser.actor.state(&game.interface);
-            agent.game_end(win::GameEndReport { won: false }).await?;
+            agent
+                .game_end(win::GameEndReport {
+                    won: false,
+                    me: Rc::downgrade(&loser),
+                })
+                .await?;
         }
+
+        game.update().await?;
 
         Ok(true)
     }
 
-    pub fn start<'s, 'g>(
-        &'s self,
+    pub fn start<'g>(
+        self: &'g Rc<Self>,
         game: &'g Game,
-    ) -> impl IntoFuture<Output = Result<(), Box<dyn Any>>> + 'g
-    where
-        's: 'g,
-    {
+    ) -> impl IntoFuture<Output = Result<(), IoError>> + 'g {
         if self.started.get() {
             panic!("Do not start the game twice!");
         }
@@ -300,14 +356,11 @@ impl Combat {
 
                 let max_iter: Turns = Turns(100_000);
                 while self.clock.turns() < max_iter {
-                    game.update().await?;
                     if self.termination_condition(game).await? {
                         break;
                     }
 
                     self.clock.tick(self.len_members());
-                    // println!("{}", self.arena.display_debug());
-                    // println!("Turn: {:?}", self.clock.turns());
 
                     let i = self.clock.current_turn_order();
                     let combatant = self.initiative.borrow().get(i).unwrap().clone();

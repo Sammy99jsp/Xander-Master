@@ -1,0 +1,42 @@
+{
+    "$schema": "./creature.schema.json",
+    "name": "Swordsman",
+    "kind": {
+        "monster": {
+            "cr": "1/2",
+            "type": {
+                "type": "HUMANOID"
+            }
+        }
+    },
+    "size": "medium",
+    "stats": {
+        "ac": 13,
+        "health": {
+            "max_hp": 11
+        },
+        "speed": 20,
+        "scores": {
+            "str": 13,
+            "dex": 12,
+            "con": 12,
+            "int": 10,
+            "wis": 11,
+            "cha": 10
+        },
+        "actions": {
+            "attacks": [
+                {
+                    "name": "Greatsword",
+                    "kind": {
+                        "type": "melee"
+                    },
+                    "ability": "strength",
+                    "hit": {
+                        "piercing": "2d6"
+                    }
+                }
+            ]
+        }
+    }
+}

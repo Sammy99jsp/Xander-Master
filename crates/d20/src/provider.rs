@@ -255,39 +255,35 @@ impl UnevalTree {
 #[cfg(feature = "rand")]
 pub mod local_rng {
     use rand::{
-        SeedableRng,
+        SeedableRng, TryRng,
         distr::{Distribution, Uniform},
-        rngs::StdRng,
+        rngs::{SysRng, Xoshiro128PlusPlus},
     };
     use std::{
         future::{Ready, ready},
-        sync::{Mutex, OnceLock},
+        sync::Mutex,
     };
+    use xander_runtime::dynx::rapidhash::quality::SeedableState;
 
     use super::DiceRoller;
     use crate::{Dice, Int};
 
-    fn init_rng(seed: Option<u64>) -> StdRng {
-        match seed {
-            Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(&mut rand::rng()),
-        }
-    }
-
     /// Thread-local RNG.
     ///
-    /// Internally uses [rand::rngs::StdRng].
+    /// Internally uses [rand::rngs::Xoshiro128PlusPlus].
     #[derive(Debug)]
-    pub struct LocalRng(Option<u64>, OnceLock<Mutex<StdRng>>);
+    pub struct LocalRng(Mutex<Xoshiro128PlusPlus>);
 
     impl LocalRng {
         /// Create a new [LocalRng] with a given seed.
-        pub const fn with_seed(seed: u64) -> Self {
-            Self(Some(seed), OnceLock::new())
+        pub fn with_seed(seed: u64) -> Self {
+            Self(Mutex::new(Xoshiro128PlusPlus::seed_from_u64(seed)))
         }
 
         pub fn new() -> Self {
-            Self(None, OnceLock::new())
+            Self(Mutex::new(Xoshiro128PlusPlus::seed_from_u64(
+                SysRng.try_next_u64().expect("Cannot seed from system!"),
+            )))
         }
     }
 
@@ -323,11 +319,7 @@ pub mod local_rng {
             &self,
             dice: impl IntoIterator<Item = &'d Dice>,
         ) -> Ready<Result<Vec<Vec<u32>>, Self::RollErr>> {
-            let mut rng = self
-                .1
-                .get_or_init(|| Mutex::new(init_rng(self.0)))
-                .lock()
-                .expect("Not poisoned!");
+            let mut rng = self.0.lock().expect("Not poisoned!");
 
             ready(Ok(dice
                 .into_iter()

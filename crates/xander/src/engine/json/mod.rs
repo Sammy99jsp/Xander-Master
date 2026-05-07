@@ -8,12 +8,14 @@ use crate::engine::game::{
     creature::{Creature, CreatureId},
 };
 
+pub mod combatant;
 pub mod creature;
+pub mod game;
 pub mod stats;
 pub mod utils;
 
 impl Combat {
-    pub fn load_raw_character(&self, me: creature::Creature) -> Rc<Creature> {
+    pub fn load_raw_creature(&self, me: creature::Creature) -> Rc<Creature> {
         let id = CreatureId(self.next_creature_id() as _);
         utils::WithId { value: me, id }.into()
     }

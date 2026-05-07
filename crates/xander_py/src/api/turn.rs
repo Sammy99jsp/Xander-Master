@@ -1,5 +1,6 @@
 use std::{
-    rc::Rc,
+    iter::once,
+    rc::{Rc, Weak},
     sync::{
         Arc, Weak as ArcWeak,
         atomic::{AtomicBool, Ordering},
@@ -16,6 +17,7 @@ use pyo3::{
 use crate::{
     api::{
         attack::{Attack, AttackReport},
+        game::Me,
         utils::{Availability, Illegal},
     },
     py::utils::{OrExpired, PythonWeak, UnsafePythonEscape, run_future},
@@ -29,6 +31,7 @@ mod rs {
             action::{Action, Attacking},
             turn::{self, Turn},
         },
+        creature,
         measure::Feet,
     };
 }
@@ -85,6 +88,14 @@ impl Turn {
                     .map(Availability::from_any)
             })
             .collect::<PyResult<Vec<_>>>()
+    }
+
+    #[getter]
+    pub fn me(&self) -> PyResult<Me> {
+        Ok(Me {
+            me: unsafe { PythonWeak::new(self.upgrade()?.me.clone()) },
+            game: self.game.clone(),
+        })
     }
 
     pub fn end(&mut self) -> PyResult<()> {
@@ -181,6 +192,152 @@ impl Turn {
 }
 
 #[pyclass]
+pub struct Combatant {
+    pub combatant: PythonWeak<rs::Combatant>,
+    pub game: PythonWeak<rs::Game>,
+}
+
+impl Combatant {
+    pub fn upgrade(&self) -> PyResult<Rc<rs::Combatant>> {
+        self.combatant.upgrade_or_expired("Combat")
+    }
+}
+
+#[pymethods]
+impl Combatant {
+    #[getter]
+    pub fn monster_type(&self) -> PyResult<String> {
+        match &self.upgrade()?.creature.kind {
+            rs::creature::CreatureKind::Monster(rs::creature::Monster { ty, .. }) => {
+                Ok(ty.ty.title().to_string())
+            }
+            _ => todo!(),
+        }
+    }
+
+    #[getter]
+    pub fn hp<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let combatant = self.upgrade()?;
+        let game = self.game.upgrade_or_expired("Combat")?;
+
+        let current_hp = combatant.creature.stats.health.current();
+        let max_hp = run_future(game, combatant.creature.stats.health.max_hp.get());
+        Ok(ndarray::Array1::from_iter([current_hp as f32, max_hp as f32]).into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn position<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let pos = self.upgrade()?.position.get();
+        Ok(ndarray::Array1::from_iter([pos.x.0 as f32, pos.y.0 as f32]).into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn initiative(&self) -> PyResult<i32> {
+        Ok(self.upgrade()?.initiative_score.get())
+    }
+
+    #[getter]
+    pub fn name(&self) -> PyResult<String> {
+        Ok(self.upgrade()?.creature.name.clone())
+    }
+}
+
+#[pyclass]
+pub struct View {
+    pub game: PythonWeak<rs::Game>,
+    pub me: PythonWeak<rs::Combatant>,
+    pub allies: UnsafePythonEscape<Vec<Weak<rs::Combatant>>>,
+    pub enemies: UnsafePythonEscape<Vec<Weak<rs::Combatant>>>,
+}
+
+impl View {
+    fn arena_zeros<'a>(
+        &'a self,
+        iter: impl Iterator<Item = &'a Weak<rs::Combatant>>,
+    ) -> PyResult<ndarray::Array2<f32>> {
+        let game = self.game.upgrade_or_expired("Game")?;
+        let dimensions = game.combat.arena.dimensions;
+        let (width, height) = (dimensions.width.0, dimensions.height.0);
+
+        let mut array = ndarray::Array2::<f32>::zeros([width as usize, height as usize]);
+
+        for (x, y) in iter
+            .map(Weak::upgrade)
+            .map(Option::unwrap)
+            .map(|a| a.position.get())
+            .map(|pos| (pos.x.0, pos.y.0))
+            .map(|(x, y)| (x as usize, y as usize))
+        {
+            *array
+                .get_mut([x, y])
+                .expect("positions should always be in the arena!") = 1.0;
+        }
+
+        Ok(array)
+    }
+}
+
+#[pymethods]
+impl View {
+    #[getter]
+    pub fn me(&self) -> Me {
+        Me {
+            me: self.me.clone(),
+            game: self.game.clone(),
+        }
+    }
+
+    #[getter]
+    pub fn allies(&self) -> Vec<Combatant> {
+        self.allies
+            .iter()
+            .map(|combatant| Combatant {
+                combatant: unsafe { PythonWeak::new(combatant.clone()) },
+                game: self.game.clone(),
+            })
+            .collect()
+    }
+
+    #[getter]
+    pub fn enemies(&self) -> Vec<Combatant> {
+        self.enemies
+            .iter()
+            .map(|combatant| Combatant {
+            combatant: unsafe { PythonWeak::new(combatant.clone()) },
+                game: self.game.clone(),
+            })
+            .collect()
+    }
+
+    #[getter]
+    pub fn grid_me<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<f32>>> {
+        Ok(self
+            .arena_zeros(once(&self.me.as_inner()))?
+            .into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn grid_allies<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<f32>>> {
+        Ok(self.arena_zeros(self.allies.iter())?.into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn grid_enemies<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<f32>>> {
+        Ok(self.arena_zeros(self.enemies.iter())?.into_pyarray(py))
+    }
+
+    #[getter]
+    pub fn arena_dims<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+        let game = self.game.upgrade_or_expired("Game")?;
+        let dims = game.combat.arena.dimensions;
+        Ok(
+            ndarray::Array::from_vec(vec![dims.width.0 as f32, dims.height.0 as f32])
+                .into_pyarray(py),
+        )
+    }
+}
+
+#[pyclass]
 pub struct Movement {
     turn: PythonWeak<rs::Turn>,
     game: PythonWeak<rs::Game>,
@@ -195,13 +352,13 @@ impl Movement {
         self.game.upgrade_or_expired("Game")
     }
 
-    fn _available_directions(&self) -> PyResult<impl Iterator<Item = f32>> {
+    fn _available_directions(&self) -> PyResult<impl Iterator<Item = bool>> {
         Ok(run_future(
             self.game()?,
             self.upgrade()?.available_movement_directions(),
         )
         .into_iter()
-        .map(|a| a.is_some() as u8 as f32))
+        .map(|a| a.is_some()))
     }
 }
 
@@ -228,10 +385,7 @@ impl Movement {
     }
 
     #[getter]
-    pub fn available_directions<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, numpy::PyArray1<f32>>> {
+    pub fn directions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<bool>>> {
         Ok(ndarray::Array1::from_iter(self._available_directions()?).into_pyarray(py))
     }
 
@@ -241,7 +395,7 @@ impl Movement {
             ._available_directions()?
             .enumerate()
             .map(|(i, a)| {
-                if a == 0.0 {
+                if !a {
                     rs::turn::DIRECTION_UNAVAILABLE
                 } else {
                     rs::turn::DIRECTION_ARROW[i]
@@ -283,7 +437,7 @@ action!(Dash, "Dash");
 action!(Disengage, "Disengage");
 action!(Dodge, "Dodge");
 
-fn to_py_action(
+pub fn to_py_action(
     py: Python<'_>,
     game: PythonWeak<rs::Game>,
     action: rs::Action,

@@ -14,7 +14,7 @@ pub struct Disengaging {
 }
 
 impl Disengaging {
-    pub async fn apply(self) -> Rc<Self> {
+    pub fn apply(self) -> Rc<Self> {
         Rc::new(self)
     }
 }
