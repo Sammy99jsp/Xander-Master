@@ -263,7 +263,6 @@ pub mod local_rng {
         future::{Ready, ready},
         sync::Mutex,
     };
-    use xander_runtime::dynx::rapidhash::quality::SeedableState;
 
     use super::DiceRoller;
     use crate::{Dice, Int};

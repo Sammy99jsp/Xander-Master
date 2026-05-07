@@ -22,6 +22,19 @@ The project is mostly written in Rust, with extra Python modules for the AI part
 - `crates/xander_runtime`&mdash; Base data structures and traits used throughout Xander.
 - `crates/dynx`, `crates/dynx_macros` &mdash; Type-safe registries, which Xander uses for in-game content.
 
+## Building Xander.py
+
+You will need:
+- Python >= 3.11
+- A Rust nightly toolchain (see `1.`)
+
+1. To build `xander.py` you need to have the [`rustup`](https://rustup.rs) installed.
+2. Make a new Python environment with `venv`, `conda`, etc. and `pip install maturin`
+2. In the `crates/xander_py` directory, run `maturin build`
+3. Maturin will output the output path of the wheel file
+4. You may now distribute the file, or install it with `pip install /path/to/file/xander-X.X.X-cp311-cp311-XXXX.whl`
+
+
 ## Generative AI Statement
 No Generative AI was used within this codebase.
 

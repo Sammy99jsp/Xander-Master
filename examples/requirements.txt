@@ -1,0 +1,4 @@
+stable-baselines3==2.8.0
+sb3-contrib==2.8.0
+tqdm==4.67.3
+rich==15.0.0
