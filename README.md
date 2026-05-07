@@ -34,6 +34,9 @@ You will need:
 3. Maturin will output the output path of the wheel file
 4. You may now distribute the file, or install it with `pip install /path/to/file/xander-X.X.X-cp311-cp311-XXXX.whl`
 
+## Trained Models
+
+You can find the example models on [my HuggingFace](https://huggingface.co/Sammy99jsp/Xander/blob/main/README.md).
 
 ## Generative AI Statement
 No Generative AI was used within this codebase.
